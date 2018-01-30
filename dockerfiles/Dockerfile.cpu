@@ -1,0 +1,44 @@
+# Dockerfile for CPU-only CakeChat setup
+
+FROM ubuntu:16.04
+
+ARG TENSORBOARD_VERSION=0.1.8
+
+# Install some dependencies
+RUN apt-get update && apt-get install -y \
+        curl \
+        git \
+        screen \
+        tmux \
+        sudo \
+        nano \
+        pkg-config \
+        software-properties-common \
+        unzip \
+        vim \
+        wget \
+        python \
+        python-dev \
+        && \
+    apt-get clean && \
+    apt-get autoremove && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install pip
+RUN curl -O https://bootstrap.pypa.io/get-pip.py && \
+    python get-pip.py && \
+    rm get-pip.py
+
+RUN pip install -U pip
+
+# setup cakechat and install dependencies
+RUN git clone https://github.com/lukalabs/cakechat.git /root/cakechat
+RUN pip --no-cache-dir install -r /root/cakechat/requirements.txt --process-dependency-links
+
+# setup Tensorboard for monitoring the training process
+RUN pip install tensorflow-tensorboard==$TENSORBOARD_VERSION
+RUN mkdir -p /root/cakechat/data/tensorboard
+
+WORKDIR /root/cakechat
+CMD (tensorboard --logdir=data/tensorboard 2>data/tensorboard/err.log &); \
+    /bin/bash

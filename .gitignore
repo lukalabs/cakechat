@@ -1,0 +1,10 @@
+*.DS_Store
+*.pyc
+*.swp
+*.egg-info
+.idea
+temp/*
+dist/*
+build/*
+tags
+venv

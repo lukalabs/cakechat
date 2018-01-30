@@ -1,0 +1,297 @@
+how old are you ?
+are you a leader or a follower ?
+my name is david . what is my name ?
+is the sky blue or black ?
+what do you think about china ?
+how many legs does a cat have ?
+is paris the capital of china ?
+what do you think about artificial intelligence ?
+love is . . .
+can a submarine swim ?
+what is the purpose of existence ?
+what do you think about rock climbing ?
+what is the color of the sky ?
+life is sad .
+do you like music ?
+what is the greatest novel every written ?
+do you have siblings ?
+have you hurt anyone ?
+is madrid the capital of spain ?
+what do you see when you look up the sky ?
+what do you think about the weather ?
+what are you doing here ?
+what time is it ?
+are you afraid of robots ?
+how old were you when you were able to speak ?
+what is the first question to ask steve jobs ?
+what do you think about david _unk_ ?
+can i whack you in the face ?
+who should we be afraid of ?
+are you a human or are you just pretending to be a human ?
+i think you are a machine .
+what ' s the best thing about living in the future ?
+tokyo is . . .
+what religion are you ?
+i see that you are very aggressive !
+what do you think about the turing test ?
+what do you think about the queen ?
+would you mind giving me a hand ?
+do you drink alcohol ?
+how many hours do you work a day ?
+be moral !
+what are you doing for tomorrow ?
+are you married or are you single ?
+what is the queen of canada ?
+i have two apples , paul gives me two oranges , how many apples do i have ?
+how tall are you ?
+what is the most important thing in life ?
+can you show me the way to the local bookstore ?
+can we live a week without drinking ?
+do you like the sound of silence ?
+what are your three weaknesses ?
+what question do you hate to answer ?
+you ' re not going to eat , are you ?
+where do you live in town ?
+does your father have a lot of money to support you ?
+how big is " pretty big " ?
+what kind of car do you have ?
+i don ' t have money or a new car .
+why did you get a poodle ?
+friends will lend you money when you ' re broke .
+i ' m bored .
+we need a new mattress .
+we need to save money .
+i ' m upset with my mom .
+he went to las vegas . he lost it all gambling .
+i want you to clean the bathroom .
+i mean you ' re wasting your life .
+did you put a stamp on the envelope ?
+it ' s sunday .
+the cat is meowing . he ' s hungry .
+i just cut myself again .
+mom , i want a puppy .
+my parents go to church every sunday .
+thank you .
+take me to a nice restaurant , not to mcdonald ' s .
+my grandma ' s apartment smells funny .
+the price of stamps goes up and up .
+a button came off my shirt .
+did you dry everything in the dryer ?
+i don ' t want fruit . i want something tasty .
+a ham sandwich .
+you need a bath every day .
+i called hp about my computer .
+what ' s your email address ?
+i ' m going to take a nap .
+i have lots of friends .
+don ' t you ever cheat on me .
+i hate to go outside .
+you can yell at them .
+i want to get a puppy for my son .
+why don ' t you look outside ?
+turn on the air conditioner .
+i ' m going to the bank .
+the nation is switching to digital tv .
+no , he just landed the plane and walked to a restaurant .
+your sleeves are not tissues .
+i am happy , but marriage is a lot of responsibility .
+beer is a powerful drug .
+my pants have a hole in the front pocket .
+i think most jokes are about women .
+i ' ve been thinking about learning spanish .
+like " one , two , buckle my shoe . "
+i wish i was really smart .
+what ' s the weather going to be like this weekend ?
+are you going to be buried next to each other ?
+a flag should be pretty .
+i watered all the plants .
+i don ' t have long distance service with my home phone .
+what college do you go to ?
+gravity is very important .
+without gravity , you would go up .
+how about a dictionary ?
+i never miss the food and drink section .
+have you done your homework ?
+no more homework .
+i don ' t think so . after i finish , i ' ll have enough money to go
+parking at school is impossible .
+this is a huge library .
+you ' d think a library would be safe from thieves .
+i ' m taking a math course in school .
+the husband said he tried to help the boy .
+i don ' t like riding the bus .
+i got a ticket yesterday .
+the speed limit is 65 .
+what do you mean ?
+don ' t ever be in a hurry .
+i have to go to the bathroom .
+no , this is the tree .
+my car is dirty .
+a tree fell onto my dad ' s car .
+what do you mean ?
+they need a left - turn arrow .
+i haven ' t looked anywhere yet .
+i got a ticket downtown for $ 140 .
+no , the car stopped and the passenger pushed the injured student off the hood .
+i don ' t park at a store that uses metal shopping carts .
+turn the radio down , please .
+can i try your coffee ?
+they say he ' s going 80 miles per hour .
+i love my computer .
+let ' s go to a movie .
+it ' s based on a true story about a divorced man and his young son .
+a travel show follows another travel show .
+singers are supposed to sound good .
+she ' s cute .
+you have pretty eyes .
+i love you .
+give me a hug .
+did you have a date friday night ?
+i thought about getting out and taking a taxi home .
+some people have good noses .
+i know a good chinese restaurant .
+tomorrow we ' ll have rice and fish for lunch .
+bring me a better steak .
+i wonder if the cooks ' nails are dirty , too .
+i ' m going to just hope that the bathroom is clean .
+an andy _unk_ drawing .
+i love baseball .
+golf is a silly game .
+where do you want to go ?
+i bought some new shoes .
+he sank a 20 - foot putt on the last hole to win by one stroke !
+two guys got into an argument .
+doesn ' t crime cost more than police ?
+the man fell asleep .
+put your seatbelt on .
+did you see that puddle of water on the floor ?
+i have to go back upstairs .
+i didn ' t know you had a gun .
+a recent fire destroyed 85 homes .
+at night i went out to eat . the food was delicious .
+no pets , no smoking .
+so we have to be at the airport at 10 : 15 .
+a long time ago , flying used to be okay .
+i want to go on a cruise ship .
+i hate to fly .
+i was thinking of driving to arizona .
+how did we end up in that terrible hotel ?
+i didn ' t get home until 30 minutes ago .
+my dad got to see the beautiful new world war ii monument .
+it only took about two hours .
+i love cheese .
+i used to work in a deli .
+i eat the same thing every day .
+i love peanuts .
+i guess he has to be very careful about what he eats .
+i filled up my freezer with ice cream .
+don ' t drink milk out of the carton . use a glass !
+i got laid off last week .
+did you shine your shoes ?
+i was busy the whole day .
+babies cry all the time .
+i was a painter .
+no one would hire you to flip hamburgers .
+teaching is the best part of my whole day .
+i enjoy selling . i was born to sell .
+if you lose your job , you can move in with me .
+i was going to be a doctor .
+if you ' re a smart doctor , you stay away from hospitals .
+i want to move to new york .
+i bought you a pair of pants .
+i would if i could find someone who makes strong pockets .
+i need a new computer .
+i ' m trying to stretch my dollars .
+yes , even though some of the potatoes had eyes .
+we will be house rich , but cash poor .
+i hate looking for an apartment .
+it shouldn ' t take him long to fix it .
+i won ' t be able to play with the kids .
+it ' s so nice to have a heated apartment .
+no rusty old cars are sitting in the front yards .
+how many rich people do you know ?
+who did you vote for ?
+i can ' t believe he won the election .
+people say that everybody loves obama .
+who did you vote for for president ?
+i don ' t know why i bother to vote .
+did he speak to every family that lost a soldier ?
+but we need new taxes to pay for highways , schools , and prisons .
+i can ' t believe that they would lie to us .
+i need to type to make money .
+i cut my finger .
+have you tried nose drops ?
+i want to get a tan . i don ' t want to look so pale .
+my back is killing me .
+my doctor said i need surgery .
+his doctor says his heart and lungs are strong and healthy .
+i hate _unk_ more than brushing !
+we ' re hiking to lose weight , not to see goats and bears .
+it seems like i get a new pimple almost every day .
+everyone tells you a different story about the same thing .
+our tv remote is filthy .
+so , every time the plane goes up , my ear starts to hurt .
+but i do all my writing with my right hand .
+hello juan , hello corin , how are you ?
+can i help you ?
+well if you want the _unk_ flight you have three flights a week , monday , wednesday and friday
+can i help you ?
+white coffee , no sugar please .
+how long are you going to stay in britain ?
+oh spain , i have a house in santa _unk_ del este . i spend at least 12 weeks
+welcome to the royal crown .
+thanks . your room is 407 on the fourth floor . here is your key . enjoy your stay
+the great dragon in soho is by far the best asian restaurant in town .
+can i help you ?
+have you got a pen handy ?
+ok that ' s 27 pounds altogether . here ' s your change , thank you very much
+are you ready to order ?
+a steak with chips , well done please , and also a salad with tomato , lettuce , tuna
+can you tell me your credit card number , please ?
+are you ready to order or prefer to see the menu ?
+you ' re lovely corin . cheers .
+we can order something in the hotel . i ' m hungry too .
+we have an international health policy with metro life .
+thank you very much .
+can i help you ?
+look juan ! what nice t - shirts .
+good morning , can i help you ?
+thank you .
+can i help you ?
+yes please , we want scottish smoked salmon .
+excuse me , have you got this sweater for me ?
+oh ! they ' re really elegant .
+it ' s a pleasure to meet you , professor . thank you so much for helping us .
+who ' s the tall woman next to barbara ?
+it ' s freezing outside ! what happened to the weather report ?
+i think we ' re ready . i ' ll have the tomato soup to start
+they ' re going to send an ambulance and a police car right away .
+ok , let ' s see how much it weighs
+should we take a taxi or a bus to the mall ?
+she ' ll be 55 on may 14 .
+sure thing ! why don ' t we go shoot some hoops now ?
+i hope so . i ' m going to visit my brother who lives there . i will stay
+oh , fun ! i ' m going to michigan .
+i am from washington .
+would you please pass the salt ? thank you .
+how big is your family ?
+i have been hanging out with my friend . have you seen tess ?
+hello ?
+how many legs does an octopus have ?
+i hope you get better soon .
+i like italian food , too . let ' s go to an italian restaurant .
+is meg inside ?
+hi ! where do you want to go ?
+where do you want to go ?
+how do you celebrate christmas ?
+i do not like dancing very much .
+school is hard this year .
+my dream is to be a movie star .
+how many jobs have you had since leaving university ?
+what mistakes have you made ?
+what are your strengths ?
+should a company have a code of ethics ?
+how did he manage his staff ?
+do you think leaders are born or made ?
+what about setting up a counseling service , vincent ? some staff are under a lot of stress .
+have you paid the invoice for the last shipment ?
