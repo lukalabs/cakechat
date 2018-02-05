@@ -19,17 +19,15 @@ RUN apt-get update && apt-get install -y \
         wget \
         python \
         python-dev \
+        python-pip \
+        python-setuptools \
         && \
     apt-get clean && \
     apt-get autoremove && \
     rm -rf /var/lib/apt/lists/*
 
-# Install pip
-RUN curl -O https://bootstrap.pypa.io/get-pip.py && \
-    python get-pip.py && \
-    rm get-pip.py
-
-RUN pip install -U pip
+# Install up-to-date pip
+RUN pip --no-cache-dir install -U pip
 
 # setup cakechat and install dependencies
 RUN git clone https://github.com/lukalabs/cakechat.git /root/cakechat

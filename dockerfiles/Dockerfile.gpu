@@ -29,7 +29,10 @@ RUN apt-get update && apt-get install -y \
 		libzmq3-dev \
 		nano \
 		pkg-config \
+		python \
 		python-dev \
+		python-pip \
+		python-setuptools \
 		software-properties-common \
 		unzip \
 		vim \
@@ -42,10 +45,8 @@ RUN apt-get update && apt-get install -y \
 # Link BLAS library to use OpenBLAS using the alternatives mechanism (https://www.scipy.org/scipylib/building/linux.html#debian-ubuntu)
 	update-alternatives --set libblas.so.3 /usr/lib/openblas-base/libblas.so.3
 
-# Install pip
-RUN curl -O https://bootstrap.pypa.io/get-pip.py && \
-	python get-pip.py && \
-	rm get-pip.py
+# Install up-to-date pip
+RUN pip --no-cache-dir install -U pip
 
 # Build & install libgpuarray
 RUN pip --no-cache-dir install \
@@ -80,8 +81,6 @@ RUN apt-get update && apt-get install -y \
     sudo \
     && \
     rm -rf /var/lib/apt/lists/*
-
-RUN pip install -U pip
 
 # setup cakechat and install dependencies
 RUN git clone https://github.com/lukalabs/cakechat.git /root/cakechat
