@@ -2,7 +2,9 @@
 
 FROM ubuntu:16.04
 
-ARG TENSORBOARD_VERSION=0.1.8
+# TensorBoard-related packages versions
+ARG TENSORBOARD_VERSION=1.5.0
+ARG TENSORFLOW_VERSION=1.5.0
 
 # Install some dependencies
 RUN apt-get update && apt-get install -y \
@@ -34,7 +36,7 @@ RUN git clone https://github.com/lukalabs/cakechat.git /root/cakechat
 RUN pip --no-cache-dir install -r /root/cakechat/requirements.txt --process-dependency-links
 
 # setup Tensorboard for monitoring the training process
-RUN pip install tensorflow-tensorboard==$TENSORBOARD_VERSION
+RUN pip install tensorflow-tensorboard==$TENSORBOARD_VERSION tensorflow==$TENSORFLOW_VERSION
 RUN mkdir -p /root/cakechat/data/tensorboard
 
 WORKDIR /root/cakechat
