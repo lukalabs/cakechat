@@ -64,18 +64,21 @@ The code is flexible and allows to condition a response by an arbitrary categori
 
 ## Quick start
 
-Quickly build a CPU-only docker image, run it & start the CakeChat serving the model on 8080 port:
+Run the CPU-only pre-built docker image & start the CakeChat serving the model on 8080 port:
 
 ```(bash)
-# Build & run docker container
-docker build -t cakechat:latest -f dockerfiles/Dockerfile.cpu dockerfiles/
+docker run --name cakechat-dev -p 127.0.0.1:8080:8080 -it lukalabs/cakechat:latest \
+    bash -c "python bin/cakechat_server.py"
+```
 
-docker run --name cakechat-dev -p 127.0.0.1:8080:8080 -it cakechat:latest \
-    bash -c "python tools/download_model.py && python bin/cakechat_server.py"
+(Or) using the GPU-enabled image:
+
+```(bash)
+nvidia-docker run --name cakechat-gpu-dev -p 127.0.0.1:8080:8080 -it lukalabs/cakechat-gpu:latest \
+    bash -c "USE_GPU=0 python bin/cakechat_server.py"
 ```
 
 That's it! Now you can try it by running `python tools/test_api.py -f localhost -p 8080 -c "Hi! How are you?"` from the host command line.
-
 
 ## Setup
 
