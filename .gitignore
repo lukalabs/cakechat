@@ -8,3 +8,6 @@ dist/*
 build/*
 tags
 venv
+data
+!data/corpora_processed
+!data/quality
