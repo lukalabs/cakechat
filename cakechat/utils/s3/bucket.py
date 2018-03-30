@@ -13,8 +13,6 @@ class S3Bucket(object):
         """
         Download file from AWS S3 to the local one
         """
-        remote_file_name = os.path.normpath(remote_file_name)
-
         # create dir if not exists for storing file from s3
         ensure_dir(os.path.dirname(local_file_name))
 

@@ -47,7 +47,7 @@ class DummyFileResolver(AbstractFileResolver):
 
 
 def load_file(file_path, filter_empty_lines=True):
-    with codecs.open(file_path, 'rt', 'utf-8') as fh:
+    with codecs.open(file_path, 'r', 'utf-8') as fh:
         lines = [line.strip() for line in fh.readlines()]
         if filter_empty_lines:
             lines = filter(None, lines)

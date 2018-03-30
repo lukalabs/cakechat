@@ -13,7 +13,7 @@ S3_CONDITIONS_IDX_REMOTE_DIR = 'conditions_index'  # S3 remote directory with co
 S3_W2V_REMOTE_DIR = 'w2v_models'  # S3 remote directory with pre-trained w2v models
 
 # data params
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data/')  # Directory to store all the data
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')  # Directory to store all the data
 # e.g. datasets, models, indices
 PROCESSED_CORPUS_DIR = os.path.join(DATA_DIR, 'corpora_processed')  # Path to a processed corpora datasets
 TOKEN_INDEX_DIR = os.path.join(DATA_DIR, 'tokens_index')  # Path to a prepared tokens index file
