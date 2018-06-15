@@ -1,10 +1,18 @@
 import os
 import subprocess
+import sys
 import time
 from collections import namedtuple
 from datetime import datetime
 
-import unicodecsv as csv
+from six.moves import xrange
+
+# UnicodeCSV requires files to be opened as binary on Python3 by design.
+# https://github.com/jdunck/python-unicodecsv/issues/65
+if sys.version_info[0] == 2:
+    import unicodecsv as csv
+else:
+    import csv
 
 from cakechat.config import DATA_DIR, PREDICTION_MODE_FOR_TESTS, LOG_CANDIDATES_NUM, MAX_PREDICTIONS_LENGTH
 from cakechat.dialog_model.inference import get_nn_responses
@@ -54,7 +62,7 @@ def _get_iteration_stats(stats_info):
 
 
 def init_csv_writer(fh, mode, output_seq_len):
-    csv_writer = csv.writer(fh, encoding='utf-8', delimiter='\t')
+    csv_writer = csv.writer(fh, delimiter='\t')
     csv_writer.writerow([''])  # empty row for better readability
     csv_writer.writerow([_NN_MODEL_PARAMS_STR])
     csv_writer.writerow(['commit hash: %s' % _get_git_revision_short_hash()])

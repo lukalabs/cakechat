@@ -20,9 +20,9 @@ def get_model_response():
     try:
         dialog_context = parse_dataset_param(params, param_name='context')
     except KeyError as e:
-        return get_api_error_response('Malformed request, no "%s" param was found' % e.message, 400, _logger)
+        return get_api_error_response('Malformed request, no "%s" param was found' % str(e), 400, _logger)
     except ValueError as e:
-        return get_api_error_response('Malformed request: %s' % e.message, 400, _logger)
+        return get_api_error_response('Malformed request: %s' % str(e), 400, _logger)
 
     emotion = params.get('emotion', DEFAULT_CONDITION)
     if emotion not in EMOTIONS_TYPES:

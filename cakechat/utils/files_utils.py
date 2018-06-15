@@ -1,7 +1,7 @@
 import os
 import codecs
 from abc import abstractmethod, ABCMeta
-import cPickle as pickle
+from six.moves import cPickle as pickle
 
 from cakechat.utils.logger import get_logger
 
@@ -50,7 +50,7 @@ def load_file(file_path, filter_empty_lines=True):
     with codecs.open(file_path, 'r', 'utf-8') as fh:
         lines = [line.strip() for line in fh.readlines()]
         if filter_empty_lines:
-            lines = filter(None, lines)
+            lines = list(filter(None, lines))
 
         return lines
 

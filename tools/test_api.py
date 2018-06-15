@@ -1,3 +1,4 @@
+from __future__ import print_function
 import sys
 import os
 import argparse
@@ -28,4 +29,4 @@ if __name__ == '__main__':
     body = {'context': args.context, 'emotion': args.emotion}
 
     response = requests.post(url, json=body)
-    print response.json()
+    print(response.json())

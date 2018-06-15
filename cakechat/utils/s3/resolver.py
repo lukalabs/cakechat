@@ -40,6 +40,6 @@ class S3FileResolver(AbstractFileResolver, WithLogger):
             bucket.download(remote_path, self._file_path)
             return True
         except Exception as e:
-            self._logger.warn('File can not be downloaded from AWS S3 because: %s' % e.message)
+            self._logger.warn('File can not be downloaded from AWS S3 because: %s' % str(e))
 
         return False

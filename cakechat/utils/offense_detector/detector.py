@@ -1,4 +1,7 @@
 import nltk
+from six import string_types
+from six.moves import xrange
+
 
 from cakechat.utils.files_utils import load_file
 from cakechat.utils.text_processing import get_tokens_sequence
@@ -25,7 +28,7 @@ class OffenseDetector(object):
         return flatten(ngrams, constructor=set)
 
     def has_offensive_ngrams(self, text_or_tokenized_text):
-        if isinstance(text_or_tokenized_text, basestring):
+        if isinstance(text_or_tokenized_text, string_types):
             tokenized_text = get_tokens_sequence(text_or_tokenized_text)
         elif isinstance(text_or_tokenized_text, list):
             tokenized_text = text_or_tokenized_text

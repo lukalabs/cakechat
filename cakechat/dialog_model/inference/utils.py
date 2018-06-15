@@ -1,4 +1,5 @@
 import numpy as np
+from six.moves import xrange
 
 from cakechat.config import BATCH_SIZE, DEFAULT_CONDITION
 from cakechat.dialog_model.model_utils import get_training_batch

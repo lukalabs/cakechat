@@ -1,7 +1,7 @@
 import argparse
 import os
 import sys
-from itertools import imap
+from six.moves import map
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -45,7 +45,7 @@ def _get_w2v_embedding_matrix_by_corpus_path(processed_train_corpus_path, index_
             condition_field_name='condition')
 
         _logger.info('Getting text-filtered train iterator...')
-        train_lines_for_w2v = imap(lambda x: x['text'], get_flatten_dialogs(dialogs_for_w2v))
+        train_lines_for_w2v = map(lambda x: x['text'], get_flatten_dialogs(dialogs_for_w2v))
 
         _logger.info('Getting tokenized train iterator...')
         tokenized_train_lines_for_w2v = ProcessedLinesIterator(

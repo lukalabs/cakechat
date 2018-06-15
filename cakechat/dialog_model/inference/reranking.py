@@ -1,7 +1,8 @@
 from abc import ABCMeta, abstractmethod
-from itertools import izip_longest
+from six.moves import zip_longest
 
 import numpy as np
+from six.moves import xrange
 
 from cakechat.dialog_model.inference.service_tokens import ServiceTokensIDs
 from cakechat.dialog_model.inference.utils import get_sequence_score_by_thought_vector, get_sequence_score, \
@@ -103,7 +104,7 @@ class MMIReranker(AbstractCandidatesReranker):
         condition_ids = [] if condition_ids is None else condition_ids  # For izip_lingest
         candidates_scores = [
             self._compute_candidates_scores(context, candidates, condition_id)
-            for context, candidates, condition_id in izip_longest(contexts, all_candidates, condition_ids)
+            for context, candidates, condition_id in zip_longest(contexts, all_candidates, condition_ids)
         ]
         scores_order = [np.argsort(-np.array(scores)) for scores in candidates_scores]
         batch_size = len(contexts)

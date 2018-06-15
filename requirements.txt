@@ -10,3 +10,4 @@ scikit-learn==0.19.1
 tensorboard-logger==0.0.4
 telepot==12.4
 gensim==1.0.1
+six==1.11.0

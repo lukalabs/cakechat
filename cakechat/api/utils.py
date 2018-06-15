@@ -1,4 +1,5 @@
 from flask import jsonify
+from six import text_type
 
 
 def get_api_error_response(message, code, logger):
@@ -7,8 +8,8 @@ def get_api_error_response(message, code, logger):
 
 
 def _is_list_of_unicode_strings(data):
-    return (isinstance(data, list) or isinstance(data, tuple)) and len(data) > 0 \
-           and all(isinstance(s, unicode) for s in data)
+    return bool(data and isinstance(data, (list, tuple)) and
+                all(isinstance(s, text_type) for s in data))
 
 
 def parse_dataset_param(params, param_name, required=True):

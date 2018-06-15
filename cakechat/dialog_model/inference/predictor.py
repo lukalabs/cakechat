@@ -1,4 +1,5 @@
 import numpy as np
+from six.moves import xrange
 
 
 class Predictor(object):

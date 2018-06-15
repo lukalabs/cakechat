@@ -4,6 +4,7 @@ import unittest
 
 import numpy as np
 from scipy.stats import binom
+from six.moves import xrange
 
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))))

@@ -1,6 +1,9 @@
+from __future__ import print_function
 import os
 import sys
 import argparse
+
+from six.moves import xrange
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -32,7 +35,7 @@ def log_distinct_metrics(nn_model, x, condition_ids=None, samples_num=1, ngram_l
         result = 'distinct {}-gram = {:.5f}'.format(ngram_length, scores_mean)
         if samples_num > 1:
             result += ' (std: {:.5f})'.format(scores_std)
-        print result
+        print(result)
 
 
 def load_model(model_path=None, tokens_index_path=None, conditions_index_path=None):

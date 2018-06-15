@@ -1,6 +1,7 @@
-from itertools import izip_longest
+from six.moves import zip_longest
 
 import numpy as np
+from six.moves import xrange
 import theano
 
 from cakechat.dialog_model.inference.candidates.abstract_generator import AbstractCandidatesGenerator
@@ -248,7 +249,7 @@ class BeamsearchCandidatesGenerator(AbstractCandidatesGenerator):
 
     @timer
     def generate_candidates(self, context_token_ids, condition_ids, output_seq_len):
-        x_with_conditions_batch = izip_longest(context_token_ids, condition_ids if condition_ids is not None else [])
+        x_with_conditions_batch = zip_longest(context_token_ids, condition_ids if condition_ids is not None else [])
         result = []
         for x, condition_id in x_with_conditions_batch:
             self._compute_thought_vectors(x)

@@ -1,8 +1,10 @@
 import os
 from collections import namedtuple
-from itertools import imap, islice, izip
+from itertools import islice
 
 import numpy as np
+from six import text_type
+from six.moves import xrange, map, zip
 
 from cakechat.config import BASE_CORPUS_NAME, TRAIN_CORPUS_NAME, WORD_EMBEDDING_DIMENSION, INPUT_CONTEXT_SIZE, \
     HIDDEN_LAYER_DIMENSION, ENCODER_DEPTH, DECODER_DEPTH, INPUT_SEQUENCE_LENGTH, \
@@ -21,7 +23,7 @@ Dataset = namedtuple('Dataset', ['x', 'y', 'condition_ids'])
 
 
 def transform_conditions_to_ids(conditions, condition_to_index, n_dialogs):
-    condition_ids_iterator = imap(
+    condition_ids_iterator = map(
         lambda condition: condition_to_index.get(condition, condition_to_index[DEFAULT_CONDITION]), conditions)
     condition_ids = np.full(n_dialogs, condition_to_index[DEFAULT_CONDITION], dtype=np.int32)
     for sample_idx, condition_id in enumerate(condition_ids_iterator):
@@ -143,7 +145,7 @@ def transform_token_ids_to_sentences(y_ids, index_to_token):
             response_tokens.append(token_to_add)
 
         response_str = ' '.join(response_tokens)
-        if not isinstance(response_str, unicode):
+        if not isinstance(response_str, text_type):
             response_str = response_str.decode('utf-8')
 
         responses.append(response_str)
@@ -178,7 +180,7 @@ def transform_context_token_ids_to_sentences(x_ids, index_to_token):
                 sample_tokens.append(token_to_add)
 
             sample_str = ' '.join(sample_tokens)
-            if not isinstance(sample_str, unicode):
+            if not isinstance(sample_str, text_type):
                 sample_str = sample_str.decode('utf-8')
 
             context_samples.append(sample_str)
@@ -235,7 +237,7 @@ def get_w2v_embedding_matrix(tokenized_dialog_lines, index_to_token, add_start_e
 
 def get_training_batch(inputs, batch_size, random_permute=False):
     n_samples = inputs[0].shape[0]
-    n_batches = n_samples / batch_size
+    n_batches = n_samples // batch_size
     batches_seq = np.arange(n_batches)
     samples_seq = np.arange(n_samples)
 
@@ -312,7 +314,7 @@ def reverse_nn_input(dataset, service_tokens):
     """
     # Swap last utterance of x with y, while padding with start- and eos-tokens
     y_output = np.full(dataset.y.shape, service_tokens.pad_token_id, dtype=dataset.y.dtype)
-    for y_output_sample, x_input_sample in izip(y_output, dataset.x[:, -1]):
+    for y_output_sample, x_input_sample in zip(y_output, dataset.x[:, -1]):
         # Write start token at the first index
         y_output_sample[0] = service_tokens.start_token_id
         y_output_token_index = 1
@@ -330,7 +332,7 @@ def reverse_nn_input(dataset, service_tokens):
 
     # Use utterances from y in x while truncating start- and eos-tokens
     x_output = np.full(dataset.x.shape, service_tokens.pad_token_id, dtype=dataset.x.dtype)
-    for x_output_sample, x_input_sample, y_input_sample in izip(x_output, dataset.x[:, :-1], dataset.y):
+    for x_output_sample, x_input_sample, y_input_sample in zip(x_output, dataset.x[:, :-1], dataset.y):
         # Copy all the context utterances except the last one right to the output
         x_output_sample[:-1] = x_input_sample
         x_output_token_index = 0
@@ -359,7 +361,7 @@ def _get_x_data_iterator_with_context(x_data_iterator, y_data_iterator, context_
     context = []
 
     last_y_line = None
-    for x_line, y_line in izip(x_data_iterator, y_data_iterator):
+    for x_line, y_line in zip(x_data_iterator, y_data_iterator):
         if x_line != last_y_line:
             context = []  # clear context if last response != current dialog context (new dialog)
 
@@ -380,7 +382,7 @@ def transform_lines_to_nn_input(tokenized_dialog_lines, token_to_index):
 
     x_data_iterator = islice(x_data_iterator, 0, None, 2)
     y_data_iterator = islice(y_data_iterator, 1, None, 2)
-    n_dialogs /= 2
+    n_dialogs //= 2
 
     y_data_iterator, y_data_iterator_for_context = file_buffered_tee(y_data_iterator)
     x_data_iterator = _get_x_data_iterator_with_context(x_data_iterator, y_data_iterator_for_context)

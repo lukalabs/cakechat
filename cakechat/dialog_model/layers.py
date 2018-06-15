@@ -1,5 +1,6 @@
 import theano.tensor as T
 from lasagne.layers.base import MergeLayer, Layer
+from six.moves import xrange
 
 
 class RepeatLayer(Layer):

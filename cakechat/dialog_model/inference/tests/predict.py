@@ -2,6 +2,7 @@ import os
 import sys
 import unittest
 import numpy as np
+from six.moves import xrange
 
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))))

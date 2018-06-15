@@ -1,5 +1,9 @@
+from __future__ import print_function
 import os
 import sys
+
+from six.moves import xrange
+from six import iteritems
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -37,7 +41,7 @@ def _get_context_to_weighted_responses(nn_model, testset, all_utterances):
     token_to_index = nn_model.token_to_index
 
     all_utterances_ids = transform_lines_to_token_ids(
-        map(get_tokens_sequence, all_utterances), token_to_index, OUTPUT_SEQUENCE_LENGTH, add_start_end=True)
+        list(map(get_tokens_sequence, all_utterances)), token_to_index, OUTPUT_SEQUENCE_LENGTH, add_start_end=True)
 
     context_to_weighted_responses = {}
 
@@ -66,12 +70,12 @@ def _compute_metrics(model, testset):
             compute_retrieval_metric_mean(compute_recall_k, testset, context_to_weighted_responses, top_count=10),
         'mean_recall@25%':
             compute_retrieval_metric_mean(
-                compute_recall_k, testset, context_to_weighted_responses, top_count=test_set_size / 4)
+                compute_recall_k, testset, context_to_weighted_responses, top_count=test_set_size // 4)
     }
 
-    print 'Test set size = %i' % test_set_size
-    for metric_name, metric_value in metrics.iteritems():
-        print '%s = %s' % (metric_name, metric_value)
+    print('Test set size = %i' % test_set_size)
+    for metric_name, metric_value in iteritems(metrics):
+        print('%s = %s' % (metric_name, metric_value))
 
 
 if __name__ == '__main__':

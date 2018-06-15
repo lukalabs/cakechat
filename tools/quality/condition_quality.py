@@ -1,5 +1,6 @@
 import os
 import sys
+from six import iteritems
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -126,8 +127,8 @@ if __name__ == '__main__':
                                                                                    nn_model.condition_to_index)
     tfidf_vectorizer = get_tfidf_vectorizer()
 
-    for metric, perplexity in calc_perplexity_metrics(nn_model, train_subset, conditioned_subset,
-                                                      validation).iteritems():
+    for metric, perplexity in iteritems(calc_perplexity_metrics(nn_model, train_subset, conditioned_subset,
+                                                      validation)):
         _logger.info('Metric: {}, perplexity: {}'.format(metric, perplexity))
 
     for condition, (ppl_non_conditioned, ppl_conditioned) in calc_perplexity_by_condition_metrics(nn_model, train):

@@ -1,16 +1,17 @@
 import re
 
 import nltk.tokenize
+from six import text_type
 
 from cakechat.utils.text_processing.config import SPECIAL_TOKENS
 
 _END_CHARS = '.?!'
 
-_tokenizer = nltk.tokenize.RegexpTokenizer(pattern=ur'\w+|[^\w\s]')
+_tokenizer = nltk.tokenize.RegexpTokenizer(pattern=u'\w+|[^\w\s]')
 
 
 def get_tokens_sequence(text, lower=True, check_unicode=True):
-    if check_unicode and not isinstance(text, unicode):
+    if check_unicode and not isinstance(text, text_type):
         raise TypeError('text object should be unicode type')
 
     if not text.strip():
@@ -25,7 +26,7 @@ def get_tokens_sequence(text, lower=True, check_unicode=True):
 
 
 def replace_out_of_voc_tokens(tokens, tokens_voc):
-    return map(lambda t: t if t in tokens_voc else SPECIAL_TOKENS.UNKNOWN_TOKEN, tokens)
+    return [t if t in tokens_voc else SPECIAL_TOKENS.UNKNOWN_TOKEN for t in tokens]
 
 
 def _capitalize_first_chars(text):

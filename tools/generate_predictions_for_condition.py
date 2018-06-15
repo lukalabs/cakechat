@@ -1,3 +1,4 @@
+from __future__ import print_function
 import argparse
 import os
 import sys
@@ -49,9 +50,9 @@ def print_predictions(nn_model, contexts_token_ids, condition, prediction_mode=P
         nn_model, contexts_token_ids, nn_model.condition_to_index[condition], prediction_mode=prediction_mode)
 
     for x, y in zip(x_sents, y_sents):
-        print 'condition: %s; context: %s' % (condition.encode('utf8'), x.encode('utf8'))
-        print 'response: %s' % y.encode('utf8')
-        print
+        print('condition: %s; context: %s' % (condition.encode('utf8'), x.encode('utf8')))
+        print('response: %s' % y.encode('utf8'))
+        print()
 
 
 def parse_args():

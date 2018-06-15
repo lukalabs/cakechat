@@ -1,4 +1,4 @@
-from itertools import imap
+from six.moves import map
 from operator import itemgetter
 
 from cakechat.utils.tee_file import file_buffered_tee
@@ -24,9 +24,9 @@ def get_dialog_lines_and_conditions(dialog_lines, text_field_name, condition_fie
     Splits one dialog_lines generator into two generators - one for conditions and one for dialog lines
     """
     conditions_iter, dialog_lines_iter = file_buffered_tee(
-        imap(lambda line: [line[condition_field_name], line[text_field_name]], dialog_lines))
-    conditions_iter = imap(itemgetter(0), conditions_iter)
-    dialog_lines_iter = imap(itemgetter(1), dialog_lines_iter)
+        map(lambda line: [line[condition_field_name], line[text_field_name]], dialog_lines))
+    conditions_iter = map(itemgetter(0), conditions_iter)
+    dialog_lines_iter = map(itemgetter(1), dialog_lines_iter)
     return dialog_lines_iter, conditions_iter
 
 

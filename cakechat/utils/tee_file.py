@@ -1,11 +1,15 @@
-import cPickle as pickle
 import os
 import tempfile
 
+from six.moves import xrange
+from six.moves import cPickle as pickle
+
+# Pickle on HIGHEST_PROTOCOL breaks on Python 3.6.5
+_PICKLE_PROTOCOL = 2
 
 def _pickle_iterable(filename, iterable):
     with open(filename, 'wb') as pickle_fh:
-        pklr = pickle.Pickler(pickle_fh, pickle.HIGHEST_PROTOCOL)
+        pklr = pickle.Pickler(pickle_fh, _PICKLE_PROTOCOL)
         for entry in iterable:
             pklr.dump(entry)
             pklr.clear_memo()

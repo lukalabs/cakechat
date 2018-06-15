@@ -1,4 +1,5 @@
 from abc import ABCMeta, abstractmethod
+from six import iteritems
 
 import telepot
 import telepot.loop
@@ -74,7 +75,7 @@ class AbstractTelegramChatSession(WithLogger):
 
     def _send_bot_help(self, _):
         help_lines = [self._bot_info(), '', 'List of available commands:']
-        for command, (_, description) in self._command_to_handler.iteritems():
+        for command, (_, description) in iteritems(self._command_to_handler):
             help_lines.append('/{} - {}'.format(command, description))
 
         return self._send_text('\n'.join(help_lines))
