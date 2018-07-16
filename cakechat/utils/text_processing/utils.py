@@ -1,6 +1,7 @@
 import os
-import codecs
 import json
+import codecs
+
 from six import iteritems
 
 from cakechat.config import PROCESSED_CORPUS_DIR, TOKEN_INDEX_DIR, CONDITION_IDS_INDEX_DIR

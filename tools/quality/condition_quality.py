@@ -1,49 +1,28 @@
 import os
 import sys
-from six import iteritems
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+import numpy as np
+from six import iteritems
 
 from cakechat.utils.env import init_theano_env
 
 init_theano_env()
 
-import numpy as np
-
-from cakechat.utils.text_processing import get_index_to_token_path, get_index_to_condition_path, load_index_to_item
-from cakechat.utils.dataset_loader import Dataset, load_datasets
+from cakechat.utils.dataset_loader import load_datasets
+from cakechat.utils.data_types import Dataset
 from cakechat.utils.logger import get_tools_logger
 from cakechat.dialog_model.factory import get_trained_model
-from cakechat.dialog_model.model import get_nn_model
-from cakechat.dialog_model.model_utils import get_model_full_path, transform_token_ids_to_sentences
+from cakechat.dialog_model.model_utils import transform_token_ids_to_sentences
 from cakechat.dialog_model.inference import get_nn_responses
 from cakechat.dialog_model.quality import calculate_model_mean_perplexity, get_tfidf_vectorizer, \
     calculate_lexical_similarity
-from cakechat.config import BASE_CORPUS_NAME, PREDICTION_MODE_FOR_TESTS, DEFAULT_CONDITION, RANDOM_SEED
+from cakechat.config import PREDICTION_MODE_FOR_TESTS, DEFAULT_CONDITION, RANDOM_SEED
 
 np.random.seed(seed=RANDOM_SEED)
 
 _logger = get_tools_logger(__file__)
-
-
-class FileNotFoundException(Exception):
-    pass
-
-
-def load_model():
-    index_to_token_path = get_index_to_token_path(BASE_CORPUS_NAME)
-    index_to_condition_path = get_index_to_condition_path(BASE_CORPUS_NAME)
-
-    model_path = get_model_full_path()
-    index_to_token = load_index_to_item(index_to_token_path)
-    index_to_condition = load_index_to_item(index_to_condition_path)
-
-    nn_model, model_exists = get_nn_model(index_to_token, index_to_condition, nn_model_path=model_path)
-
-    if not model_exists:
-        raise FileNotFoundException('Couldn\'t find model:\n"{}". \nExiting...'.format(model_path))
-
-    return nn_model
 
 
 def _make_non_conditioned(dataset):
@@ -83,7 +62,7 @@ def calc_perplexity_by_condition_metrics(nn_model, train):
         dataset_with_conditions = _slice_condition_data(train, condition_id)
 
         if not dataset_with_conditions.x.size:
-            _logger.warn('No dataset samples found with the given condition "%s", skipping metrics.' % condition)
+            _logger.warning('No dataset samples found with the given condition "%s", skipping metrics.' % condition)
             continue
 
         ppl_non_conditioned = calculate_model_mean_perplexity(nn_model, _make_non_conditioned(dataset_with_conditions))
@@ -106,7 +85,7 @@ def calc_lexical_similarity_metrics(nn_model, train, questions, tfidf_vectorizer
 
         responses_token_ids_ground_truth = train.y[train.condition_ids == condition_id]
         if not responses_token_ids_ground_truth.size:
-            _logger.warn('No dataset samples found with the given condition "%s", skipping metrics.' % condition)
+            _logger.warning('No dataset samples found with the given condition "%s", skipping metrics.' % condition)
             continue
 
         responses_ground_truth = transform_token_ids_to_sentences(responses_token_ids_ground_truth,

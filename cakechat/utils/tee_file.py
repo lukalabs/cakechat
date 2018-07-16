@@ -1,8 +1,7 @@
 import os
 import tempfile
 
-from six.moves import xrange
-from six.moves import cPickle as pickle
+from six.moves import cPickle as pickle, xrange
 
 # Pickle on HIGHEST_PROTOCOL breaks on Python 3.6.5
 _PICKLE_PROTOCOL = 2

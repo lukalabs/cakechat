@@ -1,7 +1,6 @@
 import numpy as np
 from six.moves import xrange
 
-
 from cakechat.config import PREDICTION_MODE_FOR_TESTS, DEFAULT_TEMPERATURE, BEAM_SIZE, \
     PREDICTION_DISTINCTNESS_NUM_TOKENS
 from cakechat.dialog_model.inference import get_nn_response_ids, ServiceTokensIDs

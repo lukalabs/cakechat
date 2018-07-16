@@ -1,7 +1,5 @@
-from six.moves import zip_longest
-
 import numpy as np
-from six.moves import xrange
+from six.moves import xrange, zip_longest
 import theano
 
 from cakechat.dialog_model.inference.candidates.abstract_generator import AbstractCandidatesGenerator
@@ -87,7 +85,7 @@ class BeamsearchCandidatesGenerator(AbstractCandidatesGenerator):
             # We need to get which original candidate this token in the expanded beam corresponds to.
             # (to fill in all the previous tokens from self._cur_candidates)
             # Because all the candidates in the expanded beam were filled sequentially, we just use this formula:
-            original_candidate_idx = candidate_idx / self._beam_size
+            original_candidate_idx = candidate_idx // self._beam_size
 
             # Construct the candidates for the next step using self._cur_candidates and the last token:
 
@@ -123,7 +121,7 @@ class BeamsearchCandidatesGenerator(AbstractCandidatesGenerator):
             # to get all the other tokens we need to get which original candidate this token in the expanded beam
             # corresponds to. Because all the candidates in the expanded beam were filled sequentially, we can just
             # use this formula:
-            original_candidate_idx = candidate_idx / self._beam_size
+            original_candidate_idx = candidate_idx // self._beam_size
 
             # Construct the candidates for the next step using self._cur_candidates and the last token:
 

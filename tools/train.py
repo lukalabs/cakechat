@@ -14,20 +14,21 @@ from cakechat.utils.text_processing import get_processed_corpus_path, get_index_
     get_flatten_dialogs, ProcessedLinesIterator, get_tokens_sequence
 from cakechat.utils.files_utils import is_non_empty_file
 from cakechat.utils.logger import get_tools_logger
+from cakechat.utils.s3 import S3FileResolver
 from cakechat.dialog_model.train import train_model
-from cakechat.dialog_model.model_utils import get_w2v_embedding_matrix, get_model_full_path
+from cakechat.dialog_model.model_utils import get_w2v_embedding_matrix
 from cakechat.dialog_model.model import get_nn_model
 from cakechat.config import BASE_CORPUS_NAME, TRAIN_CORPUS_NAME, CONTEXT_SENSITIVE_VAL_CORPUS_NAME, \
-    USE_PRETRAINED_W2V_EMBEDDINGS_LAYER
+    USE_PRETRAINED_W2V_EMBEDDINGS_LAYER, S3_MODELS_BUCKET_NAME, S3_NN_MODEL_REMOTE_DIR
 
 _logger = get_tools_logger(__file__)
 
 
 def _look_for_saved_model(nn_model_path):
     if os.path.isfile(nn_model_path):
-        _logger.info('Saved model is found: %s' % nn_model_path)
+        _logger.info('\nSaved model is found:\n{}\n'.format(nn_model_path))
     else:
-        _logger.info('Could not find previously saved model: %s\nWill train it from scratch' % nn_model_path)
+        _logger.info('\nCould not find previously saved model: \n{}\nWill train it from scratch\n'.format(nn_model_path))
 
 
 def _look_for_saved_files(files_paths):
@@ -56,17 +57,14 @@ def _get_w2v_embedding_matrix_by_corpus_path(processed_train_corpus_path, index_
         return None
 
 
-def train(is_reverse_model=False):
+def train(init_path=None, is_reverse_model=False):
     processed_train_corpus_path = get_processed_corpus_path(TRAIN_CORPUS_NAME)
     processed_val_corpus_path = get_processed_corpus_path(CONTEXT_SENSITIVE_VAL_CORPUS_NAME)
     index_to_token_path = get_index_to_token_path(BASE_CORPUS_NAME)
     index_to_condition_path = get_index_to_condition_path(BASE_CORPUS_NAME)
 
-    model_path = get_model_full_path(is_reverse_model)
-
     # check the existence of all necessary files before compiling the model
     _look_for_saved_files(files_paths=[processed_train_corpus_path, processed_val_corpus_path, index_to_token_path])
-    _look_for_saved_model(model_path)
 
     index_to_token = load_index_to_item(index_to_token_path)
     index_to_condition = load_index_to_item(index_to_condition_path)
@@ -74,8 +72,13 @@ def train(is_reverse_model=False):
     w2v_matrix = _get_w2v_embedding_matrix_by_corpus_path(processed_train_corpus_path, index_to_token)
 
     # get nn_model and train it
-    nn_model, _ = get_nn_model(index_to_token, index_to_condition, w2v_matrix)
-    train_model(nn_model, is_reverse_model=is_reverse_model)
+    nn_model_resolver_factory = S3FileResolver.init_resolver(bucket_name=S3_MODELS_BUCKET_NAME,
+                                                             remote_dir=S3_NN_MODEL_REMOTE_DIR)
+
+    nn_model, _ = get_nn_model(index_to_token, index_to_condition, model_init_path=init_path, w2v_matrix=w2v_matrix,
+                               resolver_factory=nn_model_resolver_factory, is_reverse_model=is_reverse_model)
+
+    train_model(nn_model)
 
 
 def parse_args():
@@ -85,8 +88,13 @@ def parse_args():
         '-r',
         '--reverse',
         action='store_true',
-        help='Pass this flag if you want to train reverse model. '
-        'The model will be stored at {}'.format(get_model_full_path(is_reverse_model=True)))
+        help='Pass this flag if you want to train reverse model.')
+
+    argparser.add_argument(
+        '-i',
+        '--init_weights',
+        help="Path to the file with weights that should be used for the model's initialisation")
+
     return argparser.parse_args()
 
 
@@ -96,4 +104,4 @@ if __name__ == '__main__':
         _logger.info('Slicing trainset to the first %d entries for faster training' % int(os.environ['SLICE_TRAINSET']))
 
     args = parse_args()
-    train(is_reverse_model=args.reverse)
+    train(init_path=args.init_weights, is_reverse_model=args.reverse)

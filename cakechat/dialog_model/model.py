@@ -3,7 +3,6 @@ from collections import OrderedDict
 
 import lasagne
 import numpy as np
-from six.moves import xrange
 import theano
 import theano.tensor as T
 from lasagne.init import Normal
@@ -11,13 +10,14 @@ from lasagne.layers import InputLayer, DenseLayer, GRULayer, reshape, EmbeddingL
     DropoutLayer, get_output, get_all_params, get_all_param_values, set_all_param_values, get_all_layers, \
     get_output_shape
 from lasagne.objectives import categorical_crossentropy
+from six.moves import xrange
 
-from cakechat.config import HIDDEN_LAYER_DIMENSION, GRAD_CLIP, ADADELTA_LEARNING_RATE, \
+from cakechat.config import HIDDEN_LAYER_DIMENSION, GRAD_CLIP, LEARNING_RATE, \
     TRAIN_WORD_EMBEDDINGS_LAYER, WORD_EMBEDDING_DIMENSION, ENCODER_DEPTH, DECODER_DEPTH, DENSE_DROPOUT_RATIO, \
-    CONDITION_EMBEDDING_DIMENSION
+    CONDITION_EMBEDDING_DIMENSION, NN_MODEL_PREFIX, BASE_CORPUS_NAME, INPUT_CONTEXT_SIZE, INPUT_SEQUENCE_LENGTH, \
+    OUTPUT_SEQUENCE_LENGTH, NN_MODELS_DIR
 from cakechat.dialog_model.layers import RepeatLayer, NotEqualMaskLayer, SwitchLayer
-from cakechat.dialog_model.model_utils import get_model_full_path
-from cakechat.utils.files_utils import DummyFileResolver, ensure_dir
+from cakechat.utils.files_utils import DummyFileResolver, ensure_dir, FileNotFoundException
 from cakechat.utils.logger import get_logger, laconic_logger
 from cakechat.utils.text_processing import SPECIAL_TOKENS
 
@@ -28,8 +28,12 @@ class CakeChatModel(object):
     def __init__(self,
                  index_to_token,
                  index_to_condition,
+                 model_init_path=None,
+                 nn_models_dir=NN_MODELS_DIR,
+                 model_prefix=NN_MODEL_PREFIX,
+                 corpus_name=BASE_CORPUS_NAME,
                  skip_token=SPECIAL_TOKENS.PAD_TOKEN,
-                 learning_rate=ADADELTA_LEARNING_RATE,
+                 learning_rate=LEARNING_RATE,
                  grad_clip=GRAD_CLIP,
                  hidden_layer_dim=HIDDEN_LAYER_DIMENSION,
                  encoder_depth=ENCODER_DEPTH,
@@ -38,14 +42,16 @@ class CakeChatModel(object):
                  word_embedding_dim=WORD_EMBEDDING_DIMENSION,
                  train_word_embedding=TRAIN_WORD_EMBEDDINGS_LAYER,
                  dense_dropout_ratio=DENSE_DROPOUT_RATIO,
-                 condition_embedding_dim=CONDITION_EMBEDDING_DIMENSION):
+                 condition_embedding_dim=CONDITION_EMBEDDING_DIMENSION,
+                 is_reverse_model=False):
         """
         :param index_to_token: Dict with tokens and indices for neural network
-        :param skip_token: Token to skip with masking. Id of this token is inferred from index_to_token dictionary.
-        :param learning_rate: Starting learning rate for the optimization algorithm
-        :param grad_clip: Clipping parameter to prevent gradient explosion.
+        :param model_init_path: Path to weights file to be used for model's intialization
+        :param skip_token: Token to skip with masking. Id of this token is inferred from index_to_token dictionary
+        :param learning_rate: Learning rate factor for the optimization algorithm
+        :param grad_clip: Clipping parameter to prevent gradient explosion
         :param init_embedding: Matrix to initialize word-embedding layer. Default value is random standart-gaussian
-            initialization.
+            initialization
         """
         self._index_to_token = index_to_token
         self._token_to_index = {v: k for k, v in index_to_token.items()}
@@ -69,9 +75,59 @@ class CakeChatModel(object):
         self._decoder_depth = decoder_depth
         self._dense_dropout_ratio = dense_dropout_ratio
 
+        self._nn_models_dir = nn_models_dir
+        self._model_prefix = model_prefix
+        self._corpus_name = corpus_name
+        self._is_reverse_model = is_reverse_model
+
+        self._model_load_path = model_init_path or self.model_save_path
+
         self._train_fn = None  # Training functions are compiled as needed
         self._build_model_computational_graph()
         self._compile_theano_functions_for_prediction()
+
+    @property
+    def params_str(self):
+        params_str = 'gru' \
+                     '_hd{hidden_dim}' \
+                     '_cdim{condition_dimension}' \
+                     '_drop{dropout_ratio}' \
+                     '_encd{encoder_depth}' \
+                     '_decd{decoder_depth}' \
+                     '_il{input_seq_len}' \
+                     '_cs{input_cont_size}' \
+                     '_ansl{output_seq_len}' \
+                     '_lr{learning_rate}' \
+                     '_gc{gradient_clip}' \
+                     '_{learn_emb}'
+
+        return params_str.format(
+            hidden_dim=self._hidden_layer_dim,
+            condition_dimension=self._condition_embedding_dim,
+            encoder_depth=self._encoder_depth,
+            decoder_depth=self._decoder_depth,
+            input_seq_len=INPUT_SEQUENCE_LENGTH,
+            input_cont_size=INPUT_CONTEXT_SIZE,
+            output_seq_len=OUTPUT_SEQUENCE_LENGTH,
+            dropout_ratio=self._dense_dropout_ratio,
+            learning_rate=self._learning_rate,
+            gradient_clip=self._grad_clip,
+            learn_emb='learnemb' if self._train_word_embedding else 'fixemb'
+        )
+
+    @property
+    def model_name(self):
+        suffix = ['reverse'] if self._is_reverse_model else []
+        params_str = '_'.join([
+            self._model_prefix,
+            self._corpus_name,
+            self.params_str
+        ] + suffix)
+        return params_str
+
+    @property
+    def model_save_path(self):
+        return os.path.join(self._nn_models_dir, self.model_name)
 
     def _build_model_computational_graph(self):
         self._net = OrderedDict()
@@ -98,7 +154,8 @@ class CakeChatModel(object):
 
         self._net['input_y'] = InputLayer(shape=(None, None), input_var=T.imatrix(name='input_y'), name='input_y')
 
-        # These are theano variables and they are computed dynamically as data is passed into the computational graph
+        # Infer these variables from data passed to computation graph since batch shape may differ in training and
+        # prediction phases
         self._batch_size = self._net['input_x'].input_var.shape[0]
         self._input_context_size = self._net['input_x'].input_var.shape[1]
         self._input_seq_len = self._net['input_x'].input_var.shape[2]
@@ -541,6 +598,10 @@ class CakeChatModel(object):
         return self._token_to_index
 
     @property
+    def model_load_path(self):
+        return self._model_load_path
+
+    @property
     def vocab_size(self):
         return self._vocab_size
 
@@ -556,18 +617,34 @@ class CakeChatModel(object):
     def decoder_depth(self):
         return self._decoder_depth
 
-    def load_weights(self, model_path):
-        with open(model_path, 'rb') as f:
+    @property
+    def is_reverse_model(self):
+        return self._is_reverse_model
+
+    def load_weights(self):
+        with open(self.model_load_path, 'rb') as f:
             loaded_file = np.load(f)
             # Just using .values() would't work here because we need to keep the order of elements
             ordered_params = [loaded_file['arr_%d' % i] for i in xrange(len(loaded_file.files))]
         set_all_param_values(self._net['dist'], ordered_params)
 
-    def save_weights(self, save_path):
-        ensure_dir(os.path.dirname(save_path))
+    def save_model(self, save_model_path):
+        ensure_dir(os.path.dirname(save_model_path))
         ordered_params = get_all_param_values(self._net['dist'])
-        with open(save_path, 'wb') as f:
+
+        with open(save_model_path, 'wb') as f:
             np.savez(f, *ordered_params)
+
+        _logger.info('\nSaved model:\n{}\n'.format(save_model_path))
+
+    @staticmethod
+    def delete_model(delete_path):
+        if not os.path.isfile(delete_path):
+            _logger.warning('Couldn\'t delete model. File not found:\n"{}"'.format(delete_path))
+            return
+
+        os.remove(delete_path)
+        _logger.info('\nModel is deleted:\n{}'.format(delete_path))
 
     def print_layer_shapes(self):
         laconic_logger.info('Net shapes:')
@@ -577,7 +654,7 @@ class CakeChatModel(object):
             laconic_logger.info('\t%-20s \t%s' % (l.name, get_output_shape(l)))
 
     def print_matrices_weights(self):
-        laconic_logger.info('Net matrices weights:')
+        laconic_logger.info('\nNet matrices weights:')
         params = get_all_params(self._net['dist'])
         values = get_all_param_values(self._net['dist'])
 
@@ -592,39 +669,29 @@ class CakeChatModel(object):
         laconic_logger.info('Total network size: {0:.1f} Mb'.format(total_network_size))
 
 
-def get_nn_model(index_to_token,
-                 index_to_condition,
-                 w2v_matrix=None,
-                 resolver_factory=None,
-                 nn_model_path=None,
+def get_nn_model(index_to_token, index_to_condition, model_init_path=None, w2v_matrix=None, resolver_factory=None,
                  is_reverse_model=False):
-    _logger.info('Initializing NN model with the following params:')
-    _logger.info(
-        'NN input dimension: {} (token vector size)'.format(WORD_EMBEDDING_DIMENSION + CONDITION_EMBEDDING_DIMENSION))
-    _logger.info('NN hidden dimension: {}'.format(HIDDEN_LAYER_DIMENSION))
-    _logger.info('NN output dimension: {} (dict size)'.format(len(index_to_token)))
+    model = CakeChatModel(index_to_token,
+                          index_to_condition,
+                          model_init_path=model_init_path,
+                          init_embedding=w2v_matrix,
+                          is_reverse_model=is_reverse_model)
 
-    if w2v_matrix is not None:
-        w2v_matrix = w2v_matrix.astype(theano.config.floatX)
+    model.print_layer_shapes()
 
-    model = CakeChatModel(index_to_token, index_to_condition, init_embedding=w2v_matrix)
-
-    if not nn_model_path:
-        nn_model_path = get_model_full_path(is_reverse_model)
-
-    resolver = resolver_factory(nn_model_path) if resolver_factory else DummyFileResolver(nn_model_path)
+    # try to initialise model with pre-trained weights
+    resolver = resolver_factory(model.model_load_path) if resolver_factory else DummyFileResolver(model.model_load_path)
     model_exists = resolver.resolve()
 
     if model_exists:
-        _logger.info('Loading previously calculated weights from {}...'.format(nn_model_path))
-        model.load_weights(nn_model_path)
+        _logger.info('\nLoading weights from file:\n{}\n'.format(model.model_load_path))
+        model.load_weights()
+    elif model_init_path:
+        raise FileNotFoundException('Can\'t initialize model from file:\n{}\n'.format(model_init_path))
     else:
-        _logger.info("Can't find previously calculated model, so will use a fresh one")
+        _logger.info('\nModel will be built with initial weights.\n')
 
-    _logger.info('Model is built\n')
-    model.print_layer_shapes()
     model.print_matrices_weights()
-
-    _logger.info('Model path is {}'.format(nn_model_path))
+    _logger.info('\nModel is built\n')
 
     return model, model_exists

@@ -3,11 +3,11 @@ import os
 
 from gensim.models import Word2Vec
 
+from cakechat.config import WORD_EMBEDDING_DIMENSION, W2V_WINDOW_SIZE, MIN_WORD_FREQ, USE_SKIP_GRAM
 from cakechat.utils.files_utils import DummyFileResolver, ensure_dir
 from cakechat.utils.logger import get_logger
 from cakechat.utils.tee_file import file_buffered_tee
 from cakechat.utils.w2v.utils import get_w2v_params_str, get_w2v_model_path
-from cakechat.config import WORD_EMBEDDING_DIMENSION, W2V_WINDOW_SIZE, MIN_WORD_FREQ, USE_SKIP_GRAM
 
 _WORKERS_NUM = multiprocessing.cpu_count()
 

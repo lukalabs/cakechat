@@ -1,9 +1,10 @@
 from __future__ import print_function
+
 import os
 import sys
 
-from six.moves import xrange
 from six import iteritems
+from six.moves import xrange
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 

@@ -2,7 +2,6 @@ import nltk
 from six import string_types
 from six.moves import xrange
 
-
 from cakechat.utils.files_utils import load_file
 from cakechat.utils.text_processing import get_tokens_sequence
 from cakechat.utils.data_structures import flatten

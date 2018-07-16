@@ -1,9 +1,9 @@
 import os
 
-from cakechat.utils.env import is_dev_env
 from cakechat.utils.data_structures import create_namedtuple_instance
+from cakechat.utils.env import is_dev_env
 
-RANDOM_SEED = 42  # Fix the random seed to a certain value to make everything reproducable
+RANDOM_SEED = 42  # Fix the random seed to a certain value to make everything reproducible
 
 # AWS S3 params
 S3_MODELS_BUCKET_NAME = 'cake-chat-data'  # S3 bucket with all the data
@@ -15,6 +15,7 @@ S3_W2V_REMOTE_DIR = 'w2v_models'  # S3 remote directory with pre-trained w2v mod
 # data params
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')  # Directory to store all the data
 # e.g. datasets, models, indices
+NN_MODELS_DIR = os.path.join(DATA_DIR, 'nn_models')  # Path to a directory for saving and restoring dialog models
 PROCESSED_CORPUS_DIR = os.path.join(DATA_DIR, 'corpora_processed')  # Path to a processed corpora datasets
 TOKEN_INDEX_DIR = os.path.join(DATA_DIR, 'tokens_index')  # Path to a prepared tokens index file
 CONDITION_IDS_INDEX_DIR = os.path.join(DATA_DIR, 'conditions_index')  # Path to a prepared conditions index file
@@ -24,12 +25,13 @@ BASE_CORPUS_NAME = 'processed_dialogs'  # Basic corpus name prefix
 TRAIN_CORPUS_NAME = 'train_' + BASE_CORPUS_NAME  # Corpus name prefix for the training dataset
 CONTEXT_SENSITIVE_VAL_CORPUS_NAME = 'val_' + BASE_CORPUS_NAME  # Corpus name prefix for the validation dataset
 
-VAL_SUBSET_SIZE = 250  # Subset from the validation dataset to be used in validation metrics calculation
+MAX_VAL_LINES_NUM = 10000  # Max lines number from validation set to be used for metrics calculation
+VAL_SUBSET_SIZE = 250  # Subset from the validation dataset to be used to calculated some validation metrics
 TRAIN_SUBSET_SIZE = int(os.environ['SLICE_TRAINSET']) if 'SLICE_TRAINSET' in os.environ else None  # Subset from the
 # training dataset to be used during the training. In case of None use all lines in the train dataset (default behavior)
 
 # test data paths
-TEST_DATA_DIR = os.path.join(DATA_DIR, 'quality')  # Path to datasets for quality metrics calculation
+TEST_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'quality')
 CONTEXT_FREE_VAL_CORPUS_NAME = 'context_free_validation_set'  # Context-free validation set path
 TEST_CORPUS_NAME = 'context_free_test_set'  # Context-free test set path
 QUESTIONS_CORPUS_NAME = 'context_free_questions'  # Context-free questions only path
@@ -61,9 +63,12 @@ INPUT_CONTEXT_SIZE = 3  # Maximum depth of the conversational history to be used
 OUTPUT_SEQUENCE_LENGTH = 32  # Output sequence length. Better to keep as INPUT_SEQUENCE_LENGTH+2 for start/end tokens
 BATCH_SIZE = 192  # Default batch size which fits into 8GB of GPU memory
 SHUFFLE_TRAINING_BATCHES = True  # Shuffle training batches in the dataset each epoch
-EPOCHES_NUM = 100  # Total epochs num
+EPOCHS_NUM = 100  # Total epochs num
 GRAD_CLIP = 5.0  # Gradient clipping passed into theano.gradient.grad_clip()
-ADADELTA_LEARNING_RATE = 1.0  # Initial AdaDelta learning rate
+LEARNING_RATE = 1.0  # Learning rate for the chosen optimizer (currently using Adadelta, see model.py)
+
+# model params
+NN_MODEL_PREFIX = 'cakechat'  # Specify prefix to be prepended to model's name
 
 # predictions params
 MAX_PREDICTIONS_LENGTH = 40  # Max. number of tokens which can be generated on the prediction step
@@ -94,8 +99,10 @@ MMI_REVERSE_MODEL_SCORE_WEIGHT = 1.0  # Weight for MMI reranking reverse-model s
 LOG_CANDIDATES_NUM = 10  # Number of candidates to be printed to output during the logging
 SCREEN_LOG_NUM_TEST_LINES = 10  # Number of first test lines to use when logging outputs on screen
 SCREEN_LOG_FREQUENCY_PER_BATCHES = 500  # How many batches to train until next logging of output on screen
-LOG_FREQUENCY_PER_BATCHES = 2500  # How many batches to train until next logging of all the output into file
-LOG_LOSS_DECAY = 0.99  # Decay for the averaging the loss which is printed in logs
+LOG_TO_TB_FREQUENCY_PER_BATCHES = 500  # How many batches to train until next metrics computed for TensorBoard
+LOG_TO_FILE_FREQUENCY_PER_BATCHES = 2500  # How many batches to train until next logging of all the output into file
+SAVE_MODEL_FREQUENCY_PER_BATCHES = 2500  # How many batches to train until next logging of all the output into file
+AVG_LOSS_DECAY = 0.99  # Decay for the averaging the loss
 
 # Use reduced sizes for input/output sequences, hidden layers and datasets sizes for the 'Developer Mode'
 if is_dev_env():
@@ -105,10 +112,13 @@ if is_dev_env():
     BATCH_SIZE = 128
     HIDDEN_LAYER_DIMENSION = 7
     SCREEN_LOG_FREQUENCY_PER_BATCHES = 2
-    LOG_FREQUENCY_PER_BATCHES = 3
+    LOG_TO_TB_FREQUENCY_PER_BATCHES = 3
+    LOG_TO_FILE_FREQUENCY_PER_BATCHES = 4
+    SAVE_MODEL_FREQUENCY_PER_BATCHES = 4
     WORD_EMBEDDING_DIMENSION = 15
     SAMPLES_NUM_FOR_RERANKING = BEAM_SIZE = 5
     LOG_CANDIDATES_NUM = 3
     USE_PRETRAINED_W2V_EMBEDDINGS_LAYER = False
     VAL_SUBSET_SIZE = 100
+    MAX_VAL_LINES_NUM = 100
     TRAIN_SUBSET_SIZE = 10000

@@ -1,25 +1,20 @@
-import os
-from collections import namedtuple
 from itertools import islice
 
 import numpy as np
+import theano
 from six import text_type
 from six.moves import xrange, map, zip
 
-from cakechat.config import BASE_CORPUS_NAME, TRAIN_CORPUS_NAME, WORD_EMBEDDING_DIMENSION, INPUT_CONTEXT_SIZE, \
-    HIDDEN_LAYER_DIMENSION, ENCODER_DEPTH, DECODER_DEPTH, INPUT_SEQUENCE_LENGTH, \
-    OUTPUT_SEQUENCE_LENGTH, GRAD_CLIP, ADADELTA_LEARNING_RATE, TRAIN_WORD_EMBEDDINGS_LAYER, DATA_DIR, \
-    DENSE_DROPOUT_RATIO, USE_SKIP_GRAM, W2V_WINDOW_SIZE, CONDITION_EMBEDDING_DIMENSION, DEFAULT_CONDITION, \
-    S3_MODELS_BUCKET_NAME, S3_W2V_REMOTE_DIR
+from cakechat.config import TRAIN_CORPUS_NAME, WORD_EMBEDDING_DIMENSION, INPUT_CONTEXT_SIZE, INPUT_SEQUENCE_LENGTH, DEFAULT_CONDITION, \
+    S3_MODELS_BUCKET_NAME, S3_W2V_REMOTE_DIR, OUTPUT_SEQUENCE_LENGTH, W2V_WINDOW_SIZE, USE_SKIP_GRAM
+from cakechat.utils.data_types import Dataset
 from cakechat.utils.logger import get_logger
 from cakechat.utils.s3 import S3FileResolver
 from cakechat.utils.tee_file import file_buffered_tee
-from cakechat.utils.text_processing import SPECIAL_TOKENS, load_index_to_item, get_index_to_token_path
-from cakechat.utils.w2v import get_w2v_model, get_w2v_params_str
+from cakechat.utils.text_processing import SPECIAL_TOKENS
+from cakechat.utils.w2v import get_w2v_model
 
 _logger = get_logger(__name__)
-
-Dataset = namedtuple('Dataset', ['x', 'y', 'condition_ids'])
 
 
 def transform_conditions_to_ids(conditions, condition_to_index, n_dialogs):
@@ -126,9 +121,9 @@ def transform_token_ids_to_sentences(y_ids, index_to_token):
     Transformation of each sentence ends when the end_token occurred.
     Skips start tokens.
 
-    :param y_ids: numpy array N_LINES x N_TOKENS, containing ids of all tokens to use
-    :param index_to_token: dictionary used for transforming
-    :return:
+    :param y_ids: numpy array of integers, shape (lines_num, tokens_num), represents token ids
+    :param index_to_token: dictionary to be used for transforming
+    :return: list of strings, list length = lines_num
     """
     n_responses, n_tokens = y_ids.shape
 
@@ -158,7 +153,7 @@ def transform_context_token_ids_to_sentences(x_ids, index_to_token):
     Transformation of each sentence ends when the end_token occurred.
     Skips start tokens.
 
-    :param x_ids: numpy array N_LINES x N_CONTEXTS x N_TOKENS, containing ids of all tokens to use
+    :param x_ids: context token ids, numpy array of shape (batch_size, context_len, tokens_num)
     :param index_to_token:
     :return:
     """
@@ -194,7 +189,7 @@ def _get_token_vector(token, w2v_model):
     elif token == SPECIAL_TOKENS.PAD_TOKEN:
         return np.zeros(w2v_model.vector_size)
     else:
-        _logger.warn('Can\'t find token [%s] in w2v dict' % token)
+        _logger.warning('Can\'t find token [%s] in w2v dict' % token)
         if not hasattr(_get_token_vector, 'unk_vector'):
             if SPECIAL_TOKENS.UNKNOWN_TOKEN in w2v_model.wv.vocab:
                 _get_token_vector.unk_vector = np.array(w2v_model[SPECIAL_TOKENS.UNKNOWN_TOKEN])
@@ -208,7 +203,7 @@ def transform_w2v_model_to_matrix(w2v_model, index_to_token):
 
     token_to_index = {v: k for k, v in index_to_token.items()}
     tokens_num = len(index_to_token)
-    output = np.zeros((tokens_num, WORD_EMBEDDING_DIMENSION))
+    output = np.zeros((tokens_num, WORD_EMBEDDING_DIMENSION), dtype=theano.config.floatX)
     for token in index_to_token.values():
         idx = token_to_index[token]
         output[idx] = _get_token_vector(token, w2v_model)
@@ -257,53 +252,6 @@ def get_training_batch(inputs, batch_size, random_permute=False):
         samples_ids = samples_seq[seen_samples_num:]
         # yield the rest of x and y sequences
         yield tuple(inp[samples_ids] for inp in inputs)
-
-
-def _get_nn_params_str():
-    params_str = 'gru' \
-                 '_hd{hidden_dim}' \
-                 '_drop{dropout_ratio}' \
-                 '_encd{encoder_depth}' \
-                 '_decd{decoder_depth}' \
-                 '_il{input_len}' \
-                 '_cs{context_size}' \
-                 '_ansl{ans_len}' \
-                 '_lr{learning_rate}' \
-                 '_gc_{gradient_clip}' \
-                 '_{learn_emb}' \
-                 '_cdim{condition_dimension}'
-
-    params_str = params_str.format(
-        hidden_dim=HIDDEN_LAYER_DIMENSION,
-        condition_dimension=CONDITION_EMBEDDING_DIMENSION,
-        encoder_depth=ENCODER_DEPTH,
-        decoder_depth=DECODER_DEPTH,
-        dropout_ratio=DENSE_DROPOUT_RATIO,
-        input_len=INPUT_SEQUENCE_LENGTH,
-        context_size=INPUT_CONTEXT_SIZE,
-        ans_len=OUTPUT_SEQUENCE_LENGTH,
-        learning_rate=ADADELTA_LEARNING_RATE,
-        gradient_clip=GRAD_CLIP,
-        learn_emb='learnemb' if TRAIN_WORD_EMBEDDINGS_LAYER else 'fixedemb')
-    return params_str
-
-
-def get_model_vocab_size():
-    index_to_token_path = get_index_to_token_path(BASE_CORPUS_NAME)
-    index_to_token = load_index_to_item(index_to_token_path)
-    return len(index_to_token)
-
-
-def get_model_full_params_str(is_reverse_model=False):
-    w2v_params_str = get_w2v_params_str(
-        get_model_vocab_size(), vec_size=WORD_EMBEDDING_DIMENSION, window_size=W2V_WINDOW_SIZE, skip_gram=USE_SKIP_GRAM)
-    reverse_suffix = ['reverse'] if is_reverse_model else []
-    return '_'.join([BASE_CORPUS_NAME, _get_nn_params_str(), w2v_params_str] + reverse_suffix)
-
-
-def get_model_full_path(is_reverse_model=False):
-    nn_model_path = os.path.join(DATA_DIR, 'nn_models', get_model_full_params_str(is_reverse_model))
-    return nn_model_path
 
 
 def reverse_nn_input(dataset, service_tokens):

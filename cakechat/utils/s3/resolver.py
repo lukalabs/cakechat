@@ -23,7 +23,6 @@ class S3FileResolver(AbstractFileResolver, WithLogger):
     def init_resolver(**kwargs):
         """
         Method helping to set once some parameters like bucket_name and remote_dir
-
         :param kwargs:
         :return: partially initialized class object
         """

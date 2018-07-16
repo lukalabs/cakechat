@@ -1,6 +1,7 @@
 import os
 import codecs
 from abc import abstractmethod, ABCMeta
+
 from six.moves import cPickle as pickle
 
 from cakechat.utils.logger import get_logger
@@ -60,7 +61,7 @@ def ensure_dir(dir_name):
         os.makedirs(dir_name)
 
 
-def serialize(filename, data, protocol=pickle.HIGHEST_PROTOCOL):
+def serialize(filename, data, protocol=2):
     ensure_dir(os.path.dirname(filename))
     with open(filename, 'wb') as f:
         pickle.dump(data, f, protocol)
@@ -95,3 +96,7 @@ def get_persisted(factory, persisted_file_name, **kwargs):
 
 def is_non_empty_file(file_path):
     return os.path.isfile(file_path) and os.stat(file_path).st_size != 0
+
+
+class FileNotFoundException(Exception):
+    pass

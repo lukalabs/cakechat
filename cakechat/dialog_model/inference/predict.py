@@ -1,6 +1,3 @@
-import numpy as np
-from six.moves import xrange
-
 from cakechat.config import MAX_PREDICTIONS_LENGTH, BEAM_SIZE, MMI_REVERSE_MODEL_SCORE_WEIGHT, DEFAULT_TEMPERATURE, \
     SAMPLES_NUM_FOR_RERANKING, PREDICTION_MODES, REPETITION_PENALIZE_COEFFICIENT
 from cakechat.dialog_model.inference.factory import predictor_factory
@@ -54,7 +51,7 @@ def get_nn_response_ids(context_token_ids,
     """
     Predicts several responses for every context.
 
-    :param context_token_ids: np.array; shape=(batch_size x context_size x context_len); dtype=int
+    :param context_token_ids: np.array; shape (batch_size, context_size, context_len); dtype=int
         Represents all tokens ids to use for predicting
     :param nn_model: CakeChatModel
     :param mode: one of PREDICTION_MODES mode
@@ -65,7 +62,7 @@ def get_nn_response_ids(context_token_ids,
     :param output_seq_len: Number of tokens to generate.
     :param kwargs: Other prediction parameters, passed into predictor constructor.
         Might be different depending on mode. See PredictionConfig for the details.
-    :return: np.array; shape=(responses_num x output_candidates_num x output_seq_len); dtype=int
+    :return: np.array; shape (batch_size, output_candidates_num, output_seq_len); dtype=int
         Generated predictions.
     """
     if mode == PREDICTION_MODES.sampling:
@@ -75,8 +72,9 @@ def get_nn_response_ids(context_token_ids,
     _logger.debug('Generating predicted response for the following params: %s' % prediction_config)
 
     predictor = predictor_factory(nn_model, mode, prediction_config.get_options_dict())
-    return np.array(
-        predictor.predict_responses(context_token_ids, output_seq_len, condition_ids, output_candidates_num))
+    responses = predictor.predict_responses(context_token_ids, output_seq_len, condition_ids, output_candidates_num)
+
+    return responses
 
 
 def get_nn_responses(context_token_ids,
@@ -87,19 +85,25 @@ def get_nn_responses(context_token_ids,
                      condition_ids=None,
                      **kwargs):
     """
-    Predicts several responses for every context and returns them as proccessed strings.
+    Predicts output_candidates_num responses for every context and returns them in form of strings.
     See get_nn_response_ids for the details.
 
-    :return: list of lists of strings
-        Generated predictions.
-    """
-    response_tokens_ids = get_nn_response_ids(context_token_ids, nn_model, mode, output_candidates_num, output_seq_len,
-                                              condition_ids, **kwargs)
-    # Reshape to get list of lines to supply into transform_token_ids_to_sentences
-    response_tokens_ids = np.reshape(response_tokens_ids, (-1, output_seq_len))
-    response_tokens = transform_token_ids_to_sentences(response_tokens_ids, nn_model.index_to_token)
+    :param context_token_ids: numpy array of integers, shape (contexts_num, INPUT_CONTEXT_SIZE, INPUT_SEQUENCE_LENGTH)
+    :param nn_model: trained model
+    :param mode: prediction mode, see const PREDICTION_MODES
+    :param output_candidates_num: number of responses to be generated for each context
+    :param output_seq_len: max length of generated responses
+    :param condition_ids: extra info to be taken into account while generating response (emotion, for example)
 
-    lines_num = len(response_tokens) // output_candidates_num
-    responses = [response_tokens[i * output_candidates_num:(i + 1) * output_candidates_num] for i in xrange(lines_num)]
+    :return: list of lists of strings, shape (contexts_num, output_candidates_num)
+    """
+
+    response_tokens_ids = get_nn_response_ids(context_token_ids, nn_model, mode, output_candidates_num,
+                                              output_seq_len, condition_ids, **kwargs)
+    # shape (contexts_num, output_candidates_num, output_seq_len), numpy array of integers
+
+    responses = [transform_token_ids_to_sentences(response_candidates_tokens_ids, nn_model.index_to_token)
+                 for response_candidates_tokens_ids in response_tokens_ids]
+    # responses shape (contexts_num, output_candidates_num), list of lists of strings
 
     return responses

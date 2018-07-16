@@ -15,11 +15,11 @@ class Predictor(object):
         If for some context we generated less then candidates_num candidates, we fill this responses with pads.
         """
         batch_size = len(reranked_candidates)
-        # reranked_candidates is list of lists (we need too keep it this way because we can have different number
-        # of candidates for each context), so we can't just write rerankied_candidates.shape[2]
+        # reranked_candidates is a list of lists (we need too keep it this way because we can have different number
+        # of candidates for each context), so we can't just write reranked_candidates.shape[2]
         output_seq_len = reranked_candidates[0][0].size
-        result = np.zeros((batch_size, candidates_num, output_seq_len))
-        # Loop here instead of slices because number of candidates for each context can vary here
+        result = np.zeros((batch_size, candidates_num, output_seq_len), dtype=np.int32)
+        # Loop here instead of slices because number of candidates for each context may vary here
         for i in xrange(batch_size):
             for j, candidate in enumerate(reranked_candidates[i]):
                 if j >= candidates_num:
@@ -30,4 +30,5 @@ class Predictor(object):
     def predict_responses(self, context_token_ids, output_seq_len, condition_ids=None, candidates_num=1):
         all_candidates = self._generator.generate_candidates(context_token_ids, condition_ids, output_seq_len)
         reranked_candidates = self._reranker.rerank_candidates(context_token_ids, all_candidates, condition_ids)
-        return self._select_best_candidates(reranked_candidates, candidates_num)
+        selected_responses = self._select_best_candidates(reranked_candidates, candidates_num)
+        return selected_responses

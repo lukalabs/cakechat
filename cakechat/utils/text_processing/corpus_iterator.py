@@ -44,7 +44,7 @@ class JsonTextLinesIterator(object):
             try:
                 yield json.loads(line.strip())
             except ValueError:
-                _logger.warn('Skipped invalid json object: "%s"' % line.strip())
+                _logger.warning('Skipped invalid json object: "%s"' % line.strip())
                 continue
 
     def __copy__(self):

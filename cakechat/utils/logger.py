@@ -37,7 +37,7 @@ def get_tools_logger(name):
 
 
 def _get_laconic_logger():
-    return logging.getLogger('laconic_logger')
+    return get_tools_logger('laconic_logger')
 
 
 class WithLogger(object):

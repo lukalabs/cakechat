@@ -1,8 +1,8 @@
 from abc import ABCMeta, abstractmethod
-from six import iteritems
 
 import telepot
 import telepot.loop
+from six import iteritems
 
 from cakechat.utils.logger import WithLogger
 

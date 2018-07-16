@@ -1,4 +1,5 @@
 from __future__ import print_function
+
 import os
 import sys
 import argparse
@@ -14,7 +15,6 @@ from cakechat.utils.env import init_theano_env
 init_theano_env()
 
 from cakechat.dialog_model.model import get_nn_model
-from cakechat.dialog_model.model_utils import get_model_full_path
 from cakechat.dialog_model.quality import calculate_response_ngram_distinctness
 from cakechat.utils.dataset_loader import load_datasets, load_questions_set
 from cakechat.utils.text_processing import get_index_to_token_path, load_index_to_item, get_index_to_condition_path
@@ -38,9 +38,7 @@ def log_distinct_metrics(nn_model, x, condition_ids=None, samples_num=1, ngram_l
         print(result)
 
 
-def load_model(model_path=None, tokens_index_path=None, conditions_index_path=None):
-    if model_path is None:
-        model_path = get_model_full_path()
+def load_model(model_path, tokens_index_path=None, conditions_index_path=None):
     if tokens_index_path is None:
         tokens_index_path = get_index_to_token_path(BASE_CORPUS_NAME)
     if conditions_index_path is None:
@@ -48,7 +46,7 @@ def load_model(model_path=None, tokens_index_path=None, conditions_index_path=No
 
     index_to_token = load_index_to_item(tokens_index_path)
     index_to_condition = load_index_to_item(conditions_index_path)
-    nn_model, model_exists = get_nn_model(index_to_token, index_to_condition, nn_model_path=model_path)
+    nn_model, model_exists = get_nn_model(index_to_token, index_to_condition, model_path)
 
     if not model_exists:
         raise ValueError('Couldn\'t find model: "{}".'.format(model_path))

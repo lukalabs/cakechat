@@ -5,9 +5,10 @@ import numpy as np
 
 from cakechat.config import TEST_DATA_DIR, TRAIN_CORPUS_NAME, CONTEXT_FREE_VAL_CORPUS_NAME, QUESTIONS_CORPUS_NAME, \
     CONTEXT_SENSITIVE_VAL_CORPUS_NAME, INPUT_SEQUENCE_LENGTH, INPUT_CONTEXT_SIZE, TRAIN_SUBSET_SIZE, \
-    DEFAULT_CONDITION, RANDOM_SEED
-from cakechat.dialog_model.model_utils import Dataset, lines_to_context, transform_contexts_to_token_ids, \
+    DEFAULT_CONDITION, RANDOM_SEED, MAX_VAL_LINES_NUM
+from cakechat.dialog_model.model_utils import lines_to_context, transform_contexts_to_token_ids, \
     transform_conditions_to_nn_input, transform_lines_to_nn_input
+from cakechat.utils.data_types import Dataset
 from cakechat.utils.files_utils import load_file, is_non_empty_file
 from cakechat.utils.logger import get_logger
 from cakechat.utils.text_processing import get_tokens_sequence, replace_out_of_voc_tokens, \
@@ -49,6 +50,7 @@ def load_questions_set(token_to_index):
 def load_context_free_val(token_to_index):
     _logger.info('Transform context free validation lines to matrix of indexes')
     tokenized_validation_lines = get_tokenized_test_lines(CONTEXT_FREE_VAL_CORPUS_NAME, set(token_to_index.keys()))
+    tokenized_validation_lines = tokenized_validation_lines[:MAX_VAL_LINES_NUM]
     x_validation, y_validation, _ = transform_lines_to_nn_input(tokenized_validation_lines, token_to_index)
     return Dataset(x=x_validation, y=y_validation, condition_ids=None)
 
@@ -57,6 +59,8 @@ def load_context_sensitive_val(token_to_index, condition_to_index):
     processed_val_corpus_path = get_processed_corpus_path(CONTEXT_SENSITIVE_VAL_CORPUS_NAME)
     context_sensitive_val_dialogs = load_processed_dialogs_from_json(
         FileTextLinesIterator(processed_val_corpus_path), text_field_name='text', condition_field_name='condition')
+    context_sensitive_val_dialogs = islice(context_sensitive_val_dialogs, MAX_VAL_LINES_NUM)
+
     alternated_context_sensitive_val_dialogs = \
         get_alternated_dialogs_lines(context_sensitive_val_dialogs)
     alternated_context_sensitive_val_lines, alternated_context_sensitive_val_conditions = \
@@ -95,7 +99,8 @@ def generate_subset(dataset, subset_size, random_seed=RANDOM_SEED):
     # Fix random seed here so that we get the same subsets every time the function is called
     np.random.seed(random_seed)
     if subset_size > dataset.x.shape[0]:
-        raise ValueError('Error while generating subset of the validation data: dataset size is less then subset size.')
+        raise ValueError('Error while generating subset of the validation data: '
+                         'dataset size ({}) is less than subset size ({})'.format(dataset.x.shape[0], subset_size))
     sample_idx = np.random.choice(dataset.x.shape[0], size=subset_size, replace=False)
     return Dataset(
         x=dataset.x[sample_idx],
