@@ -276,7 +276,7 @@ You can also test your model in a Telegram bot:
 * [`bin/cakechat_server.py`](bin/cakechat_server.py) - 
 Runs an HTTP-server that returns response messages of the model given dialog contexts and an emotion. See [run section](#gunicorn-http-server) for details.
 * [`tools/train.py`](tools/train.py) - 
-Trains the model on your data. You can use the `--reverse` option to train the model used in "\*-reranking" response generation algorithms for more accurate predictions.
+Trains the model on your data. You can specify the path to model's initialization weights via `--init_weights` argument. Also use the `--reverse` flag to train the model used in "\*-reranking" response generation algorithms for more accurate predictions.
 * [`tools/prepare_index_files.py`](tools/prepare_index_files.py) - 
 Prepares index for the most commonly used tokens and conditions. Use this script before training the model.
 * [`tools/quality/ranking_quality.py`](tools/quality/ranking_quality.py) - 
