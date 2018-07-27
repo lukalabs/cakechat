@@ -158,6 +158,16 @@ Then we marked out each utterance with our emotions classifier that predicts one
 To mark-up your own corpus with emotions you can use, for example, [DeepMoji tool](https://github.com/bfelbo/DeepMoji)
 or any other emotions classifier that you have.
 
+#### Initalizing model weights from file
+For some tools (for example [`tools/train.py`](tools/train.py)) you can specify the path to model's initialization weights via `--init_weights` argument.
+
+The weights may come from a trained CakeChat model or from a model with a different architecture.
+In the latter case some parameters of Cakechat model may be left without initialisation:
+a parameter will be initialized with a saved value if the parameter's name and shape are
+identical to the saved parameter, otherwise the parameter will keep its default initialization weights.
+
+See `load_weights` function for the details.
+
 ### Training your own model
 
 1. Put your training text corpus to [`data/corpora_processed/`](data/corpora_processed/).
