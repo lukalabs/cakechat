@@ -68,7 +68,7 @@ GRAD_CLIP = 5.0  # Gradient clipping passed into theano.gradient.grad_clip()
 LEARNING_RATE = 1.0  # Learning rate for the chosen optimizer (currently using Adadelta, see model.py)
 
 # model params
-NN_MODEL_PREFIX = 'cakechat'  # Specify prefix to be prepended to model's name
+NN_MODEL_PREFIX = 'cakechat_v1.3'  # Specify prefix to be prepended to model's name
 
 # predictions params
 MAX_PREDICTIONS_LENGTH = 40  # Max. number of tokens which can be generated on the prediction step
