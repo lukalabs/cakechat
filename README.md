@@ -162,7 +162,7 @@ or any other emotions classifier that you have.
 For some tools (for example [`tools/train.py`](tools/train.py)) you can specify the path to model's initialization weights via `--init_weights` argument.
 
 The weights may come from a trained CakeChat model or from a model with a different architecture.
-In the latter case some parameters of Cakechat model may be left without initialisation:
+In the latter case some parameters of Cakechat model may be left without initialization:
 a parameter will be initialized with a saved value if the parameter's name and shape are
 identical to the saved parameter, otherwise the parameter will keep its default initialization weights.
 
