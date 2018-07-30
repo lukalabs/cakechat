@@ -622,7 +622,7 @@ class CakeChatModel(object):
         return self._is_reverse_model
 
     def load_weights(self):
-        laconic_logger.info('\nLoading saved weights from file:\n{}\n'.format(self.model_load_path))
+        _logger.info('\nLoading saved weights from file:\n{}\n'.format(self.model_load_path))
         saved_var_name_to_var = OrderedDict(np.load(self.model_load_path))
 
         var_name_to_var = OrderedDict([(v.name, v) for v in get_all_params(self._net['dist'])])
