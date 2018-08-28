@@ -7,17 +7,18 @@ import theano
 import theano.tensor as T
 from lasagne.init import Normal
 from lasagne.layers import InputLayer, DenseLayer, GRULayer, reshape, EmbeddingLayer, SliceLayer, ConcatLayer, \
-    DropoutLayer, get_output, get_all_params, get_all_param_values, set_all_param_values, get_all_layers, \
+    DropoutLayer, get_output, get_all_params, get_all_param_values, get_all_layers, \
     get_output_shape
 from lasagne.objectives import categorical_crossentropy
 from six.moves import xrange
+from six import iteritems
 
 from cakechat.config import HIDDEN_LAYER_DIMENSION, GRAD_CLIP, LEARNING_RATE, \
     TRAIN_WORD_EMBEDDINGS_LAYER, WORD_EMBEDDING_DIMENSION, ENCODER_DEPTH, DECODER_DEPTH, DENSE_DROPOUT_RATIO, \
     CONDITION_EMBEDDING_DIMENSION, NN_MODEL_PREFIX, BASE_CORPUS_NAME, INPUT_CONTEXT_SIZE, INPUT_SEQUENCE_LENGTH, \
     OUTPUT_SEQUENCE_LENGTH, NN_MODELS_DIR
 from cakechat.dialog_model.layers import RepeatLayer, NotEqualMaskLayer, SwitchLayer
-from cakechat.utils.files_utils import DummyFileResolver, ensure_dir, FileNotFoundException
+from cakechat.utils.files_utils import DummyFileResolver, FileNotFoundException, ensure_dir
 from cakechat.utils.logger import get_logger, laconic_logger
 from cakechat.utils.text_processing import SPECIAL_TOKENS
 
@@ -628,7 +629,7 @@ class CakeChatModel(object):
         var_name_to_var = OrderedDict([(v.name, v) for v in get_all_params(self._net['dist'])])
         initialized_vars, missing_vars, mismatched_vars = [], [], []
 
-        for var_name, var in var_name_to_var.iteritems():
+        for var_name, var in iteritems(var_name_to_var):
             if var_name not in saved_var_name_to_var:
                 missing_vars.append(var_name)
                 continue
@@ -664,6 +665,7 @@ class CakeChatModel(object):
         laconic_logger.info('')
 
     def save_model(self, save_path):
+        ensure_dir(os.path.dirname(save_path))
         all_params = get_all_params(self._net['dist'])
         with open(save_path, 'wb') as f:
             params = {v.name: v.get_value() for v in all_params}
