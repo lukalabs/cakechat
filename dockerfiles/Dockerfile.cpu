@@ -33,7 +33,7 @@ RUN pip --no-cache-dir install -U pip
 
 # setup cakechat and install dependencies
 RUN git clone https://github.com/lukalabs/cakechat.git /root/cakechat
-RUN pip --no-cache-dir install -r /root/cakechat/requirements.txt --process-dependency-links
+RUN pip --no-cache-dir install -r /root/cakechat/requirements.txt
 
 # setup Tensorboard for monitoring the training process
 RUN pip install tensorflow-tensorboard==$TENSORBOARD_VERSION tensorflow==$TENSORFLOW_VERSION
