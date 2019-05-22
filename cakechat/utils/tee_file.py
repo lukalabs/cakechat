@@ -1,10 +1,10 @@
 import os
+import pickle
 import tempfile
-
-from six.moves import cPickle as pickle, xrange
 
 # Pickle on HIGHEST_PROTOCOL breaks on Python 3.6.5
 _PICKLE_PROTOCOL = 2
+
 
 def _pickle_iterable(filename, iterable):
     with open(filename, 'wb') as pickle_fh:
@@ -32,6 +32,6 @@ def file_buffered_tee(iterable, n=2):
     _, filename = tempfile.mkstemp()
     try:
         _pickle_iterable(filename, iterable)
-        return tuple(_unpickle_iterable(_open_pickle(filename)) for _ in xrange(n))
+        return tuple(_unpickle_iterable(_open_pickle(filename)) for _ in range(n))
     finally:
         os.remove(filename)

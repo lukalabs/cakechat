@@ -1,5 +1,4 @@
 from flask import jsonify
-from six import text_type
 
 
 def get_api_error_response(message, code, logger):
@@ -8,8 +7,7 @@ def get_api_error_response(message, code, logger):
 
 
 def _is_list_of_unicode_strings(data):
-    return bool(data and isinstance(data, (list, tuple)) and
-                all(isinstance(s, text_type) for s in data))
+    return data and isinstance(data, (list, tuple)) and all(isinstance(s, str) for s in data)
 
 
 def parse_dataset_param(params, param_name, required=True):
@@ -18,8 +16,8 @@ def parse_dataset_param(params, param_name, required=True):
 
     dataset = params[param_name]
     if not _is_list_of_unicode_strings(dataset):
-        raise ValueError('`%s` should be non-empty list of unicode strings' % param_name)
+        raise ValueError('`{}` should be non-empty list of unicode strings'.format(param_name))
     if not all(dataset):
-        raise ValueError('`%s` should not contain empty strings' % param_name)
+        raise ValueError('`{}` should not contain empty strings'.format(param_name))
 
     return dataset

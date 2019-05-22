@@ -1,7 +1,6 @@
 import numpy as np
-from six.moves import xrange
 
-from cakechat.config import BATCH_SIZE, DEFAULT_CONDITION
+from cakechat.config import BATCH_SIZE, DEFAULT_CONDITION, INTX
 from cakechat.dialog_model.model_utils import get_training_batch
 
 
@@ -10,48 +9,48 @@ def _predict_batch_by_batch(predict_fn, batched_inputs, non_batched_inputs=None,
     Splits prediction for big dataset in order to save GPU memory.
     Equivalent to predict_fn(*batched_inputs + non_batched_inputs).
 
-    predict_fn: Compiled theano-function.
+    predict_fn: compiled keras predict function.
     batched_inputs:
-        Inputs that we split into batches. On each iteration, we only pass one batch of this data into theano function.
+        Inputs that we split into batches. On each iteration, we only pass one batch of this data into predict_fn.
     non_batched_inputs:
         Inputs that we do not split into batches. These inputs are the same for each call of predict_fn
     batch_size: int
         Size of each batch that we split our batched_inputs into
     num_ouputs: int, default=1
-        Number of returned items of each theano function.
+        Number of items returned on each call of predict_fn.
     """
     if non_batched_inputs is None:
         non_batched_inputs = []
 
-    results = [[] for _ in xrange(num_outputs)]
+    results = [[] for _ in range(num_outputs)]
 
     for inputs_batch in get_training_batch(batched_inputs, batch_size):
         args = list(inputs_batch) + non_batched_inputs
         cur_result = predict_fn(*args)
         if num_outputs > 1:
-            for i in xrange(num_outputs):
+            for i in range(num_outputs):
                 results[i].append(cur_result[i])
         else:
             results[0].append(cur_result)
 
     if num_outputs > 1:
-        return tuple(np.concatenate(results[i]) for i in xrange(num_outputs))
+        return tuple(np.concatenate(results[i]) for i in range(num_outputs))
     else:
         return np.concatenate(results[0])
 
 
 def _handle_condition_ids(condition_ids, condition_to_index, num_responses):
     """
-    Returns condition_ids preprocessed to match theano shapes.
+    Returns condition_ids preprocessed to match the shape of responses batch.
     Specifically:
         If condition_ids is None it is replaced with default condition index repeated num_responses times.
         If condition_ids is an one index, it is repeated num_responses times.
         If condition_ids is an array, assert that the shape is right.
     """
     if condition_ids is None:
-        return np.array([condition_to_index[DEFAULT_CONDITION]] * num_responses, dtype=np.int32)
+        return np.array([condition_to_index[DEFAULT_CONDITION]] * num_responses, dtype=INTX)
 
-    condition_ids = np.array(condition_ids, dtype=np.int32)
+    condition_ids = np.array(condition_ids, dtype=INTX)
     if len(condition_ids.shape) == 0:  # If condition_ids is one number
         return np.repeat(condition_ids[np.newaxis], num_responses, axis=0)
     elif condition_ids.shape != (num_responses, ):
@@ -69,7 +68,7 @@ def _predict_one_step(predict_fn,
                       condition_ids=None,
                       temperature=1.0):
     condition_ids = _handle_condition_ids(condition_ids, condition_to_index, thought_vectors.shape[0])
-    # We need newaxis to match the expected shape of an argument passed to theano function
+    # We need newaxis to match the expected shape of an argument passed to predict_fn function
     prev_tokens_ids = prev_tokens_ids[:, np.newaxis]
 
     hidden_states, token_scores = \

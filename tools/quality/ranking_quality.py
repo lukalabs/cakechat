@@ -1,16 +1,11 @@
-from __future__ import print_function
-
 import os
 import sys
 
-from six import iteritems
-from six.moves import xrange
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from cakechat.utils.env import init_theano_env
+from cakechat.utils.env import init_cuda_env
 
-init_theano_env()
+init_cuda_env()
 
 from collections import defaultdict
 
@@ -30,7 +25,7 @@ def _read_testset():
     test_lines = load_file(corpus_path)
 
     testset = defaultdict(set)
-    for i in xrange(0, len(test_lines) - 1, 2):
+    for i in range(0, len(test_lines) - 1, 2):
         context = test_lines[i].strip()
         response = test_lines[i + 1].strip()
         testset[context].add(response)
@@ -74,9 +69,9 @@ def _compute_metrics(model, testset):
                 compute_recall_k, testset, context_to_weighted_responses, top_count=test_set_size // 4)
     }
 
-    print('Test set size = %i' % test_set_size)
-    for metric_name, metric_value in iteritems(metrics):
-        print('%s = %s' % (metric_name, metric_value))
+    print('Test set size = {}'.format(test_set_size))
+    for metric_name, metric_value in metrics.items():
+        print('{} = {}'.format(metric_name, metric_value))
 
 
 if __name__ == '__main__':

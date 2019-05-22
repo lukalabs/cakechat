@@ -1,99 +1,27 @@
-# Dockerfile for GPU-enabled CakeChat with Theano and libgpuarray built from source
+# Development GPU-powered dockerfile
 
-FROM nvidia/cuda:8.0-cudnn5-devel-ubuntu16.04
+FROM horovod/horovod:0.16.0-tf1.12.0-torch1.0.0-mxnet1.4.0-py3.5
 
-# Theano-related packages versions
-ARG THEANO_VERSION=rel-0.9.0
-ARG GPUARRAY_VERSION=v0.6.2
+ENV LANG C.UTF-8
 
-# TensorBoard-related packages versions
-ARG TENSORBOARD_VERSION=1.5.0
-ARG TENSORFLOW_VERSION=1.5.0
-
-# Install some dependencies
 RUN apt-get update && apt-get install -y \
-		bc \
-		build-essential \
-		cmake \
-		curl \
-		g++ \
-		gfortran \
-		git \
-		libffi-dev \
-		libfreetype6-dev \
-		libhdf5-dev \
-		libjpeg-dev \
-		liblcms2-dev \
-		libopenblas-dev \
-		liblapack-dev \
-		libpng12-dev \
-		libssl-dev \
-		libtiff5-dev \
-		libwebp-dev \
-		libzmq3-dev \
-		nano \
-		pkg-config \
-		python \
-		python-dev \
-		python-pip \
-		python-setuptools \
-		software-properties-common \
-		unzip \
-		vim \
-		wget \
-		zlib1g-dev \
-		&& \
-	apt-get clean && \
-	apt-get autoremove && \
-	rm -rf /var/lib/apt/lists/* && \
-# Link BLAS library to use OpenBLAS using the alternatives mechanism (https://www.scipy.org/scipylib/building/linux.html#debian-ubuntu)
-	update-alternatives --set libblas.so.3 /usr/lib/openblas-base/libblas.so.3
+    cabextract \
+    libcurl4-openssl-dev \
+    libmemcached-dev \
+    libmysqlclient-dev \
+    zlib1g-dev \
+    libssl-dev \
+    sudo \
+    htop \
+    tmux \
+    man \
+    less
 
 # Install up-to-date pip
-RUN pip --no-cache-dir install -U pip
+RUN pip3 --no-cache-dir install -U pip
 
-# Build & install libgpuarray
-RUN pip --no-cache-dir install \
-        Cython==0.25.2 \
-        numpy==1.12.1 \
-        Mako==1.0.7 \
-        nose==1.3.7
-
-RUN git clone https://github.com/Theano/libgpuarray.git /root/libgpuarray && \
-    cd /root/libgpuarray && git checkout $GPUARRAY_VERSION && mkdir Build && cd Build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release && make -j16 && make install && \
-    cd .. && python setup.py build && python setup.py install && ldconfig
-
-RUN rm -rf /root/libgpuarray
-
-# Install Theano and set up Theano config (.theanorc) for CUDA and OpenBLAS
-RUN pip --no-cache-dir install git+git://github.com/Theano/Theano.git@$THEANO_VERSION && \
-	\
-	echo "[global]\ndevice=cuda\nfloatX=float32\noptimizer_including=cudnn\nmode=FAST_RUN \
-		\n[gpuarray]\npreallocatem=0.95 \
-		\n[blas]\nldflag = -L/usr/lib/openblas-base -lopenblas \
-		\n[DebugMode]\ncheck_finite=1" \
-	> /root/.theanorc
-
-
-# Install CakeChat & development tools
-RUN apt-get update && apt-get install -y \
-    git \
-    screen \
-    tmux \
-    vim \
-    sudo \
-    && \
-    rm -rf /var/lib/apt/lists/*
-
-# setup cakechat and install dependencies
-RUN git clone https://github.com/lukalabs/cakechat.git /root/cakechat
-RUN pip --no-cache-dir install -r /root/cakechat/requirements.txt
-
-# setup Tensorboard for monitoring the training process
-RUN pip install tensorflow-tensorboard==$TENSORBOARD_VERSION tensorflow==$TENSORFLOW_VERSION
-RUN mkdir -p /root/cakechat/data/tensorboard
-
-WORKDIR /root/cakechat
-CMD (tensorboard --logdir=data/tensorboard 2>data/tensorboard/err.log &); \
+CMD git clone https://github.com/lukalabs/cakechat.git /root/cakechat && \
+    cd /root/cakechat && \
+    pip3 install -r requirements.txt ; \
+    (mkdir -p /root/cakechat/results/tensorboard && CUDA_VISIBLE_DEVICES= tensorboard --logdir=/root/cakechat/results/tensorboard 2>/root/cakechat/results/tensorboard/err.log &) ; \
     /bin/bash

@@ -1,7 +1,7 @@
 from abc import ABCMeta, abstractmethod
+from itertools import zip_longest
 
 import numpy as np
-from six.moves import xrange, zip_longest
 
 from cakechat.dialog_model.inference.service_tokens import ServiceTokensIDs
 from cakechat.dialog_model.inference.utils import get_sequence_score_by_thought_vector, get_sequence_score, \
@@ -14,9 +14,7 @@ from cakechat.utils.profile import timer
 _logger = get_logger(__name__)
 
 
-class AbstractCandidatesReranker(object):
-    __metaclass__ = ABCMeta
-
+class AbstractCandidatesReranker(object, metaclass=ABCMeta):
     @abstractmethod
     def rerank_candidates(self, contexts, all_candidates, condition_ids):
         pass
@@ -104,6 +102,6 @@ class MMIReranker(AbstractCandidatesReranker):
         batch_size = len(contexts)
         # reranked_candidates[i][j] = j-th best response for i-th question
         reranked_candidates = [
-            [all_candidates[i][j] for j in scores_order[i]] for i in xrange(batch_size)  # yapf: disable
+            [all_candidates[i][j] for j in scores_order[i]] for i in range(batch_size)  # yapf: disable
         ]
         return reranked_candidates

@@ -1,7 +1,9 @@
-import numpy as np
-from six.moves import xrange, zip_longest
-import theano
+from itertools import zip_longest
 
+import keras.backend as K
+import numpy as np
+
+from cakechat.config import INTX
 from cakechat.dialog_model.inference.candidates.abstract_generator import AbstractCandidatesGenerator
 from cakechat.dialog_model.inference.service_tokens import ServiceTokensIDs
 from cakechat.dialog_model.inference.utils import get_next_token_log_prob_one_step, get_thought_vectors
@@ -33,9 +35,9 @@ class BeamsearchCandidatesGenerator(AbstractCandidatesGenerator):
 
     def _init_hidden_states_and_candidates(self, output_seq_len):
         # This array will contain beam_size candidates, each of which output_seq_len long.
-        # dtype=np.int32, because this array stores ids of tokens which are integers.
+        # dtype=INTX, because this array stores ids of tokens which are integers.
         self._cur_candidates = np.full(
-            (self._beam_size, output_seq_len), self._service_tokens_ids.pad_token_id, dtype=np.int32)
+            (self._beam_size, output_seq_len), self._service_tokens_ids.pad_token_id, dtype=INTX)
         # First, fill in first token of each candidate
         self._cur_candidates[:, 0] = self._service_tokens_ids.start_token_id
         # and prepare an array for score of each candidate
@@ -43,25 +45,25 @@ class BeamsearchCandidatesGenerator(AbstractCandidatesGenerator):
 
         # Finished candidates are going to be concatenated here. Each candidate will be of shape=(1, output_seq_len),
         # But now we have 0 candidates: that's why we need to initialize this array with shape=(0, output_seq_len)
-        self._finished_candidates = np.zeros((0, output_seq_len), dtype=np.int32)
+        self._finished_candidates = np.zeros((0, output_seq_len), dtype=INTX)
         # Same story here: 0 candidates so long => shape=0.
-        self._finished_candidates_scores = np.zeros(0, dtype=np.float32)
+        self._finished_candidates_scores = np.zeros(0, dtype=K.floatx())
 
         # For each candidate in the beam, for each layer of the decoder we need hidden_states_dim numbers to store
         # this array
         self._hidden_states_batch = np.zeros(
             (self._beam_size, self._nn_model.decoder_depth, self._nn_model.hidden_layer_dim),
-            dtype=theano.config.floatX)  # By default, numpy has dtype=np.float64, but this array is passed
-        # right into theano functions, so we need to have explicit type declaring here.
+            dtype=K.floatx())  # By default, numpy has dtype=np.float64, but this array is passed
+        # right into model's functions, so we need to have explicit type declaring here.
 
     def _compute_thought_vectors(self, context_token_ids):
         # thought_vector is (1 x thought_vector_dim);
-        # context_token_ids is (input_seq_len), but we need to make it 1 x input_seq_len, because theano functions
+        # context_token_ids is (input_seq_len), but we need to make it 1 x input_seq_len, because model's functions
         # require input_seq_len dimension to be the second one.
         thought_vector = get_thought_vectors(self._nn_model, context_token_ids[np.newaxis, :])
-        # All theano functions process each sequence independently: every input sequence is matched to the corresponding
-        # output sequence. So if we want to have probability of all outputs given the save inputs, we need to repeat
-        # the input <num_outputs> times. <num_outputs> = beam_size here.
+        # All model's functions process each sequence independently: every input sequence is matched to the
+        # corresponding output sequence. So if we want to get probabilities of all outputs given the saved inputs,
+        # we need to repeat the input <num_outputs> times. <num_outputs> = beam_size here.
         self._thought_batch = np.repeat(thought_vector, self._beam_size, axis=0)
 
     def _update_next_candidates_and_hidden_states(self, token_idx, best_non_finished_candidates_indices,
@@ -78,7 +80,7 @@ class BeamsearchCandidatesGenerator(AbstractCandidatesGenerator):
         # Separate arrays for the updated hidden states
         next_hidden_states_batch = np.zeros_like(self._hidden_states_batch)
         # and the candidates
-        next_step_candidates = np.full_like(self._cur_candidates, self._service_tokens_ids.pad_token_id, dtype=np.int32)
+        next_step_candidates = np.full_like(self._cur_candidates, self._service_tokens_ids.pad_token_id, dtype=INTX)
 
         for i, candidate_idx in enumerate(best_non_finished_candidates_indices):
             # expanded_beam_tokens contains the last token for each of the beam_size^2 candidates in the expanded beam.
@@ -111,11 +113,11 @@ class BeamsearchCandidatesGenerator(AbstractCandidatesGenerator):
 
         # These are only finished candidates on the current step. We will further append this array to
         # self._finished_candidates
-        # dtype=np.int32, because this array stores ids of tokens which are integers.
+        # dtype=INTX, because this array stores ids of tokens which are integers.
         cur_finished_candidates = \
-            np.full((n_finished_candidates, output_seq_len), self._service_tokens_ids.pad_token_id, dtype=np.int32)
+            np.full((n_finished_candidates, output_seq_len), self._service_tokens_ids.pad_token_id, dtype=INTX)
 
-        cur_finished_candidates_scores = np.full(n_finished_candidates, 0, dtype=np.float32)
+        cur_finished_candidates_scores = np.full(n_finished_candidates, 0, dtype=K.floatx())
         for i, candidate_idx in enumerate(best_finished_candidates_indices):
             # expanded_beam_tokens contains the last token for each of the beam_size^2 candidates in the expanded beam
             # to get all the other tokens we need to get which original candidate this token in the expanded beam
@@ -171,10 +173,10 @@ class BeamsearchCandidatesGenerator(AbstractCandidatesGenerator):
         # Expanded beam is beam_size x beam_size candidates that we consider on the next step.
         # But we don't want to keep all the candidates themselves for better performance. So we just keep
         # the last token and the total score.
-        expanded_beam_scores = np.zeros((self._beam_size * self._beam_size), dtype=np.float32)
-        expanded_beam_tokens = np.zeros((self._beam_size * self._beam_size), dtype=np.int32)
+        expanded_beam_scores = np.zeros((self._beam_size * self._beam_size), dtype=K.floatx())
+        expanded_beam_tokens = np.zeros((self._beam_size * self._beam_size), dtype=INTX)
 
-        for candidate_idx in xrange(self._beam_size):
+        for candidate_idx in range(self._beam_size):
             # Get beam_size candidates on each step
             next_token_candidates, next_token_scores = \
                 self._get_k_max_elements_indices_and_scores(next_token_score_batch[candidate_idx], self._beam_size)
@@ -219,7 +221,7 @@ class BeamsearchCandidatesGenerator(AbstractCandidatesGenerator):
         self._cur_candidates[:, 1], self._cur_candidates_scores = self._get_k_max_elements_indices_and_scores(
             next_token_score_batch[0], self._beam_size)
 
-        for token_idx in xrange(2, output_seq_len):  # Start from 2 because first token candidates are already filled.
+        for token_idx in range(2, output_seq_len):  # Start from 2 because first token candidates are already filled.
             # This array has shape beam_size x vocab_size. We use this scores to select best tokens for the beam
             # on the next step.
             next_token_score_batch = self._compute_next_token_score_batch(token_idx, condition_id)

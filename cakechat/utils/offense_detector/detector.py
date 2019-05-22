@@ -1,10 +1,8 @@
 import nltk
-from six import string_types
-from six.moves import xrange
 
+from cakechat.utils.data_structures import flatten
 from cakechat.utils.files_utils import load_file
 from cakechat.utils.text_processing import get_tokens_sequence
-from cakechat.utils.data_structures import flatten
 
 
 class OffenseDetector(object):
@@ -23,16 +21,13 @@ class OffenseDetector(object):
         return set(offensive_ngrams)
 
     def _get_ngrams(self, tokenized_line):
-        ngrams = [nltk.ngrams(tokenized_line, i) for i in xrange(1, self._max_ngram_len + 1)]
+        ngrams = [nltk.ngrams(tokenized_line, i) for i in range(1, self._max_ngram_len + 1)]
         return flatten(ngrams, constructor=set)
 
-    def has_offensive_ngrams(self, text_or_tokenized_text):
-        if isinstance(text_or_tokenized_text, string_types):
-            tokenized_text = get_tokens_sequence(text_or_tokenized_text)
-        elif isinstance(text_or_tokenized_text, list):
-            tokenized_text = text_or_tokenized_text
-        else:
-            raise TypeError('text_or_tokenized_text must be string or list')
-
+    def has_offensive_ngrams(self, text):
+        if not isinstance(text, str):
+            raise TypeError('"text" variable must be a string')
+        tokenized_text = get_tokens_sequence(text)
         text_ngrams = self._get_ngrams(tokenized_text)
+
         return bool(text_ngrams & self._offensive_ngrams)

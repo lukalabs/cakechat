@@ -3,22 +3,24 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import codecs
 from collections import Counter
 import json
+
+from tqdm import tqdm
 
 from cakechat.utils.files_utils import is_non_empty_file, ensure_dir
 from cakechat.utils.text_processing import get_tokens_sequence, get_processed_corpus_path, get_index_to_token_path, \
     get_index_to_condition_path, load_processed_dialogs_from_json, FileTextLinesIterator, SPECIAL_TOKENS
-from cakechat.config import BASE_CORPUS_NAME, TRAIN_CORPUS_NAME, DEFAULT_CONDITION
+from cakechat.config import BASE_CORPUS_NAME, TRAIN_CORPUS_NAME, DEFAULT_CONDITION, VOCABULARY_MAX_SIZE, MAX_CONDITIONS_NUM
 
-MAX_TOKENS_NUM = 50000
-MAX_CONDITIONS_NUM = 5
 TEXT_FIELD_NAME = 'text'
 CONDITION_FIELD_NAME = 'condition'
+SIMPLE_TOKENIZE = False  # Set to True if you want to use str.split() instead of get_tokens_sequence() for
+# tokenization
 
 
-def build_index_mappings(corpus_path, max_tokens_num=MAX_TOKENS_NUM, max_conditions_num=MAX_CONDITIONS_NUM):
+def build_index_mappings(corpus_path, max_tokens_num=VOCABULARY_MAX_SIZE, max_conditions_num=MAX_CONDITIONS_NUM,
+                         simple_tokenize=SIMPLE_TOKENIZE):
     if not is_non_empty_file(corpus_path):
         raise ValueError('Test corpus file doesn\'t exist: {}'.format(corpus_path))
 
@@ -28,12 +30,12 @@ def build_index_mappings(corpus_path, max_tokens_num=MAX_TOKENS_NUM, max_conditi
     tokens_counter = Counter()
     conditions_counter = Counter()
 
-    for dialog in dialogs:
+    for dialog in tqdm(dialogs):
         for utterance in dialog:
-            # Tokenize dialog utterance text and update tokens count
-            tokens = get_tokens_sequence(utterance[TEXT_FIELD_NAME])
-            tokens_counter += Counter(tokens)
-            # Update conditions count
+            tokens = utterance[TEXT_FIELD_NAME].split() if simple_tokenize else \
+                get_tokens_sequence(utterance[TEXT_FIELD_NAME])
+
+            tokens_counter.update(tokens)
             conditions_counter[utterance[CONDITION_FIELD_NAME]] += 1
 
     # Build the tokens list
@@ -45,7 +47,7 @@ def build_index_mappings(corpus_path, max_tokens_num=MAX_TOKENS_NUM, max_conditi
 
     # Validate the condition list
     if DEFAULT_CONDITION not in conditions:
-        raise Exception('No default condition "%s" found in the dataset condition list.' % DEFAULT_CONDITION)
+        raise Exception('No default condition "{}" found in the dataset condition list.'.format(DEFAULT_CONDITION))
 
     # Return index_to_token and index_to_condition mappings
     return dict(enumerate(vocab)), dict(enumerate(conditions))
@@ -53,7 +55,7 @@ def build_index_mappings(corpus_path, max_tokens_num=MAX_TOKENS_NUM, max_conditi
 
 def dump_index_to_item(index_to_item, path):
     ensure_dir(os.path.dirname(path))
-    with codecs.open(path, 'w', 'utf-8') as fh:
+    with open(path, 'w', encoding='utf-8') as fh:
         json.dump(index_to_item, fh, ensure_ascii=False)
 
 

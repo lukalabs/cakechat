@@ -1,5 +1,4 @@
 from cakechat.config import PREDICTION_MODES
-from cakechat.dialog_model.factory import get_trained_model
 from cakechat.dialog_model.inference.candidates import BeamsearchCandidatesGenerator, SamplingCandidatesGenerator
 from cakechat.dialog_model.inference.predictor import Predictor
 from cakechat.dialog_model.inference.reranking import DummyReranker, MMIReranker
@@ -28,8 +27,7 @@ def predictor_factory(nn_model, mode, config):
         if config['mmi_reverse_model_score_weight'] <= 0:
             raise ValueError('mmi_reverse_model_score_weight should be > 0 for reranking mode')
 
-        reverse_model = get_trained_model(reverse=True)
-        reranker = MMIReranker(nn_model, reverse_model, config['mmi_reverse_model_score_weight'],
+        reranker = MMIReranker(nn_model, nn_model.reverse_model, config['mmi_reverse_model_score_weight'],
                                config['repetition_penalization_coefficient'])
     else:
         reranker = DummyReranker()

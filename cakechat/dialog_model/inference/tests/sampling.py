@@ -2,9 +2,9 @@ import os
 import sys
 import unittest
 
+import keras.backend as K
 import numpy as np
 from scipy.stats import binom
-from six.moves import xrange
 
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))))
@@ -39,7 +39,7 @@ class TestSampling(unittest.TestCase):
 
     def test_sample_ndarray(self):
         # Error rate is p(token1) + p(token2) = conf_level / 2 + conf_level / 2 = conf_level
-        probs = np.array([_CONFIDENCE_LEVEL / 2, _CONFIDENCE_LEVEL / 2, 1 - _CONFIDENCE_LEVEL], dtype=np.float32)
+        probs = np.array([_CONFIDENCE_LEVEL / 2, _CONFIDENCE_LEVEL / 2, 1 - _CONFIDENCE_LEVEL], dtype=K.floatx())
 
         token_sampler = TokenSampler(
             batch_size=1,
@@ -61,7 +61,7 @@ class TestSampling(unittest.TestCase):
         adjusted_confidence_level = _CONFIDENCE_LEVEL / len(probs)  # bonferroni correction
         confidence_intervals = [binom.interval(1 - adjusted_confidence_level, _SAMPLES_NUM, p) for p in probs]
         est_probs_from, est_probs_to = zip(*confidence_intervals)
-        samples = np.array([token_sampler.sample(probs, 0) for _ in xrange(_SAMPLES_NUM)])
+        samples = np.array([token_sampler.sample(probs, 0) for _ in range(_SAMPLES_NUM)])
         counts = {val: np.sum(samples == val) for val in np.unique(samples)}
 
         for i, _ in enumerate(probs):
@@ -69,7 +69,7 @@ class TestSampling(unittest.TestCase):
             self.assertGreaterEqual(counts[i], est_probs_from[i])
 
     def test_sample_with_zeros(self):
-        probs = np.array([1.0, 0, 0], dtype=np.float32)
+        probs = np.array([1.0, 0, 0], dtype=K.floatx())
 
         token_sampler = TokenSampler(
             batch_size=1,
@@ -84,7 +84,7 @@ class TestSampling(unittest.TestCase):
         eps = _CONFIDENCE_LEVEL * 0.3
         # Here we multiply the confidence level by 0.3 so that after removal of banned token and renormalization
         # the probability of an error remains equal to _CONFIDENCE_LEVEL value.
-        probs = np.array([0.7, 0.3 - eps, eps], dtype=np.float32)
+        probs = np.array([0.7, 0.3 - eps, eps], dtype=K.floatx())
 
         token_sampler = TokenSampler(
             batch_size=1,
@@ -97,7 +97,7 @@ class TestSampling(unittest.TestCase):
 
     def test_sample_banned_tokens_2(self):
         eps = 1e-6
-        probs = np.array([1.0 - eps, eps, 0], dtype=np.float32)
+        probs = np.array([1.0 - eps, eps, 0], dtype=K.floatx())
 
         token_sampler = TokenSampler(
             batch_size=1,
@@ -113,7 +113,7 @@ class TestSampling(unittest.TestCase):
         probs = [0.5, 0.5]
 
         actual_num_nonequal_pairs = 0
-        for _ in xrange(_SAMPLES_NUM):
+        for _ in range(_SAMPLES_NUM):
             token_sampler = TokenSampler(
                 batch_size=1,
                 banned_tokens_ids=[],

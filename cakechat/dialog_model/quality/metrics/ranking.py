@@ -20,7 +20,7 @@ def compute_recall_k(expected_answers, weighted_actual_answers, k):
     sorted_k_responses = sorted(
         weighted_actual_answers.keys(), key=lambda response: weighted_actual_answers[response], reverse=True)[:k]
 
-    recall_k = len(set(sorted_k_responses) & set(expected_answers)) / float(len(expected_answers))
+    recall_k = len(set(sorted_k_responses) & set(expected_answers)) / len(expected_answers)
     return recall_k
 
 
