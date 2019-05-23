@@ -1,586 +1,191 @@
+import math
 import os
-from collections import OrderedDict
+from functools import partial
 
-import lasagne
 import numpy as np
-import theano
-import theano.tensor as T
-from lasagne.init import Normal
-from lasagne.layers import InputLayer, DenseLayer, GRULayer, reshape, EmbeddingLayer, SliceLayer, ConcatLayer, \
-    DropoutLayer, get_output, get_all_params, get_all_param_values, get_all_layers, \
-    get_output_shape
-from lasagne.objectives import categorical_crossentropy
-from six.moves import xrange
-from six import iteritems
+import tensorflow as tf
+from keras import Input, Model, optimizers
+from keras.layers import K, Bidirectional, Embedding, Concatenate, Dense, Dropout, TimeDistributed, \
+    Reshape, Lambda, CuDNNGRU, GRU
 
-from cakechat.config import HIDDEN_LAYER_DIMENSION, GRAD_CLIP, LEARNING_RATE, \
-    TRAIN_WORD_EMBEDDINGS_LAYER, WORD_EMBEDDING_DIMENSION, ENCODER_DEPTH, DECODER_DEPTH, DENSE_DROPOUT_RATIO, \
-    CONDITION_EMBEDDING_DIMENSION, NN_MODEL_PREFIX, BASE_CORPUS_NAME, INPUT_CONTEXT_SIZE, INPUT_SEQUENCE_LENGTH, \
-    OUTPUT_SEQUENCE_LENGTH, NN_MODELS_DIR
-from cakechat.dialog_model.layers import RepeatLayer, NotEqualMaskLayer, SwitchLayer
-from cakechat.utils.files_utils import DummyFileResolver, FileNotFoundException, ensure_dir
-from cakechat.utils.logger import get_logger, laconic_logger
+from cakechat.config import HIDDEN_LAYER_DIMENSION, GRAD_CLIP, LEARNING_RATE, TRAIN_WORD_EMBEDDINGS_LAYER, \
+    WORD_EMBEDDING_DIMENSION, DENSE_DROPOUT_RATIO, CONDITION_EMBEDDING_DIMENSION, MODEL_NAME, BASE_CORPUS_NAME, \
+    INPUT_CONTEXT_SIZE, INPUT_SEQUENCE_LENGTH, OUTPUT_SEQUENCE_LENGTH, BATCH_SIZE, LOG_RUN_METADATA, \
+    TENSORBOARD_LOG_DIR, EPOCHS_NUM, SHUFFLE_TRAINING_BATCHES, RANDOM_SEED, RESULTS_PATH, USE_CUDNN
+from cakechat.dialog_model.callbacks import CakeChatEvaluatorCallback
+from cakechat.dialog_model.keras_model import AbstractKerasModel
+from cakechat.dialog_model.layers import repeat_vector, softmax_with_temperature
+from cakechat.dialog_model.model_utils import get_training_batch
+from cakechat.dialog_model.quality.metrics.perplexity import calculate_model_mean_perplexity
+from cakechat.dialog_model.quality.metrics.plotters import TensorboardMetricsPlotter
+from cakechat.utils.data_structures import create_namedtuple_instance
+from cakechat.utils.logger import WithLogger
 from cakechat.utils.text_processing import SPECIAL_TOKENS
+from cakechat.utils.w2v.utils import get_token_vector
 
-_logger = get_logger(__name__)
 
-
-class CakeChatModel(object):
+class CakeChatModel(AbstractKerasModel, WithLogger):
     def __init__(self,
                  index_to_token,
                  index_to_condition,
+                 training_data_param,
+                 validation_data_param,
+                 w2v_model_param,
                  model_init_path=None,
-                 nn_models_dir=NN_MODELS_DIR,
-                 model_prefix=NN_MODEL_PREFIX,
+                 model_resolver=None,
+                 model_name=MODEL_NAME,
                  corpus_name=BASE_CORPUS_NAME,
                  skip_token=SPECIAL_TOKENS.PAD_TOKEN,
+                 token_embedding_dim=WORD_EMBEDDING_DIMENSION,
+                 train_token_embedding=TRAIN_WORD_EMBEDDINGS_LAYER,
+                 condition_embedding_dim=CONDITION_EMBEDDING_DIMENSION,
+                 input_seq_len=INPUT_SEQUENCE_LENGTH,
+                 input_context_size=INPUT_CONTEXT_SIZE,
+                 output_seq_len=OUTPUT_SEQUENCE_LENGTH,
+                 hidden_layer_dim=HIDDEN_LAYER_DIMENSION,
+                 use_cudnn=USE_CUDNN,
+                 dense_dropout_ratio=DENSE_DROPOUT_RATIO,
+                 is_reverse_model=False,
+                 reverse_model=None,
                  learning_rate=LEARNING_RATE,
                  grad_clip=GRAD_CLIP,
-                 hidden_layer_dim=HIDDEN_LAYER_DIMENSION,
-                 encoder_depth=ENCODER_DEPTH,
-                 decoder_depth=DECODER_DEPTH,
-                 init_embedding=None,
-                 word_embedding_dim=WORD_EMBEDDING_DIMENSION,
-                 train_word_embedding=TRAIN_WORD_EMBEDDINGS_LAYER,
-                 dense_dropout_ratio=DENSE_DROPOUT_RATIO,
-                 condition_embedding_dim=CONDITION_EMBEDDING_DIMENSION,
-                 is_reverse_model=False):
+                 batch_size=BATCH_SIZE,
+                 epochs_num=EPOCHS_NUM,
+                 horovod=None,
+                 tensorboard_log_dir=TENSORBOARD_LOG_DIR,
+                 log_run_metadata=LOG_RUN_METADATA):
         """
-        :param index_to_token: Dict with tokens and indices for neural network
-        :param model_init_path: Path to weights file to be used for model's intialization
-        :param skip_token: Token to skip with masking. Id of this token is inferred from index_to_token dictionary
-        :param learning_rate: Learning rate factor for the optimization algorithm
-        :param grad_clip: Clipping parameter to prevent gradient explosion
-        :param init_embedding: Matrix to initialize word-embedding layer. Default value is random standart-gaussian
-            initialization
+        :param index_to_token: Dict with mapping: tokens indices to tokens
+        :param index_to_condition: Dict with mapping: conditions indicies to conditions values
+        :param training_data_param: Instance of ModelParam, tuple (value, id) where value is a dataset used for training
+        and id is a name this dataset
+        :param validation_data_param: Instance of ModelParam, tuple (value, id) where value is a dataset used for
+        metrics calculation and id is a concatenation of these datasets' names
+        :param w2v_model_param: Instance of ModelParam, tuple (value, id) where value is a word2vec matrix of shape
+        (vocab_size, token_embedding_dim) with float values, used for initializing token embedding layers, and id is
+        the name of word2vec model
+        :param model_init_path: Path to a file with model's saved weights for layers intialization
+        :param model_resolver: Factory that takes model path and returns a file resolver object
+        :param model_name: String prefix that is prepended to automatically generated model's name. The prefix helps
+         distinguish the current experiment from other experiments with similar params.
+        :param corpus_name: File name of the training dataset (included into automatically generated model's name)
+        :param skip_token: Token to skip with masking, usually _pad_ token. Id of this token is inferred from
+        index_to_token dictionary
+        :param token_embedding_dim:  Vectors dimensionality of tokens embeddings
+        :param train_token_embedding: Bool value indicating whether to train token embeddings along with other model's
+        weights or keep them freezed during training
+        :param condition_embedding_dim: Vectors dimensionality of conditions embeddings
+        :param input_seq_len: Max number of tokens in the context sentences
+        :param input_context_size: Max number of sentences in the context
+        :param output_seq_len: Max number of tokens in the output sentences
+        :param hidden_layer_dim: Vectors dimensionality of hidden layers in GRU and Dense layers
+        :param dense_dropout_ratio: Float value between 0 and 1, indicating the ratio of neurons that will be randomly
+        deactivated during training to prevent model's overfitting
+        :param is_reverse_model: Bool value indicating the type of model:
+        False (regular model) - predicts response for the given context
+        True (reverse model) - predicts context for the given response (actually, predict the last context sentence for
+        given response and the beginning of the context) - used for calculating Maximim Mutual Information metric
+        :param reverse_model: Trained reverse model used to generate predictions in *_reranking modes
+        :param learning_rate: Learning rate of the optimization algorithm
+        :param grad_clip: Clipping parameter of the optimization algorithm, used to prevent gradient explosion
+        :param batch_size: Number of samples to be used for gradient estimation on each train step
+        :param epochs_num: Number of full dataset passes during train
+        :param horovod: Initialized horovod module used for multi-gpu training. Trains on single gpu if horovod=None
+        :param tensorboard_log_dir: Path to tensorboard logs directory
+        :param log_run_metadata: Set 'True' to profile memory consumption and computation time on tensorboard
         """
+        # Calculate batches number in each epoch.
+        # The last batch which may be smaller than batch size is included in this number
+        batches_num_per_epoch = math.ceil(training_data_param.value.x.shape[0] / batch_size) \
+            if training_data_param.value else None
+
+        # Create callbacks
+        callbacks = self._create_essential_callbacks(self, horovod)
+        callbacks.extend([
+            # Custom callback for metrics calculation
+            CakeChatEvaluatorCallback(self, index_to_token, batch_size, batches_num_per_epoch)
+        ])
+
+        super(CakeChatModel, self).__init__(
+            model_resolver_factory=model_resolver,
+            metrics_plotter=TensorboardMetricsPlotter(tensorboard_log_dir),
+            horovod=horovod,
+            training_callbacks=callbacks)
+        WithLogger.__init__(self)
+
+        self._model_name = 'reverse_{}'.format(model_name) if is_reverse_model else model_name
+        self._rnn_class = CuDNNGRU if use_cudnn else partial(GRU, reset_after=True)
+
+        # tokens params
         self._index_to_token = index_to_token
         self._token_to_index = {v: k for k, v in index_to_token.items()}
         self._vocab_size = len(self._index_to_token)
-
-        self._index_to_condition = index_to_condition
-        self._condition_to_index = {v: k for k, v in index_to_condition.items()}
-        self._condition_ids_num = len(self._condition_to_index)
-        self._condition_embedding_dim = condition_embedding_dim
-
-        self._learning_rate = learning_rate
-        self._grad_clip = grad_clip
-
-        self._W_init_embedding = Normal() if init_embedding is None else init_embedding
-        self._word_embedding_dim = word_embedding_dim
-        self._train_word_embedding = train_word_embedding
         self._skip_token_id = self._token_to_index[skip_token]
 
-        self._hidden_layer_dim = hidden_layer_dim
-        self._encoder_depth = encoder_depth
-        self._decoder_depth = decoder_depth
-        self._dense_dropout_ratio = dense_dropout_ratio
+        self._token_embedding_dim = token_embedding_dim
+        self._train_token_embedding = train_token_embedding
+        self._W_init_embedding = \
+            self._build_embedding_matrix(self._token_to_index, w2v_model_param.value, token_embedding_dim) \
+                if w2v_model_param.value else None
 
-        self._nn_models_dir = nn_models_dir
-        self._model_prefix = model_prefix
-        self._corpus_name = corpus_name
-        self._is_reverse_model = is_reverse_model
+        # condition params
+        self._index_to_condition = index_to_condition
+        self._condition_to_index = {v: k for k, v in index_to_condition.items()}
+        self._condition_embedding_dim = condition_embedding_dim
 
-        self._model_load_path = model_init_path or self.model_save_path
+        # data params
+        self._training_data = training_data_param.value
+        self._validation_data = validation_data_param.value
 
-        self._train_fn = None  # Training functions are compiled as needed
-        self._build_model_computational_graph()
-        self._compile_theano_functions_for_prediction()
+        # train params
+        self._batches_num_per_epoch = batches_num_per_epoch
+        self._model_init_path = model_init_path
+        self._horovod = horovod
 
-    @property
-    def params_str(self):
-        params_str = 'gru' \
-                     '_hd{hidden_dim}' \
-                     '_cdim{condition_dimension}' \
-                     '_drop{dropout_ratio}' \
-                     '_encd{encoder_depth}' \
-                     '_decd{decoder_depth}' \
-                     '_il{input_seq_len}' \
-                     '_cs{input_cont_size}' \
-                     '_ansl{output_seq_len}' \
-                     '_lr{learning_rate}' \
-                     '_gc{gradient_clip}' \
-                     '_{learn_emb}'
+        self._optimizer = optimizers.Adadelta(lr=learning_rate, clipvalue=grad_clip)
+        if self._horovod:
+            self._optimizer = horovod.DistributedOptimizer(self._optimizer)
 
-        return params_str.format(
-            hidden_dim=self._hidden_layer_dim,
-            condition_dimension=self._condition_embedding_dim,
-            encoder_depth=self._encoder_depth,
-            decoder_depth=self._decoder_depth,
-            input_seq_len=INPUT_SEQUENCE_LENGTH,
-            input_cont_size=INPUT_CONTEXT_SIZE,
-            output_seq_len=OUTPUT_SEQUENCE_LENGTH,
-            dropout_ratio=self._dense_dropout_ratio,
-            learning_rate=self._learning_rate,
-            gradient_clip=self._grad_clip,
-            learn_emb='learnemb' if self._train_word_embedding else 'fixemb'
-        )
+        # gather model's params that define the experiment setting
+        self._params = create_namedtuple_instance(
+            name='Params',
+            corpus_name=corpus_name,
+            input_context_size=input_context_size,
+            input_seq_len=input_seq_len,
+            output_seq_len=output_seq_len,
+            token_embedding_dim=token_embedding_dim,
+            train_batch_size=batch_size,
+            hidden_layer_dim=hidden_layer_dim,
+            w2v_model=w2v_model_param.id,
+            is_reverse_model=is_reverse_model,
+            dense_dropout_ratio=dense_dropout_ratio,
+            voc_size=len(self._token_to_index),
+            training_data=training_data_param.id,
+            validation_data=validation_data_param.id,
+            epochs_num=epochs_num,
+            optimizer=self._optimizer.get_config())
+
+        # profiling params
+        self._run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE) if log_run_metadata else None
+        self._run_metadata = tf.RunMetadata() if log_run_metadata else None
+
+        # parts of computational graph
+        self._models = None
+
+        # get trained reverse model used for inference
+        self._reverse_model = reverse_model
 
     @property
     def model_name(self):
-        suffix = ['reverse'] if self._is_reverse_model else []
-        params_str = '_'.join([
-            self._model_prefix,
-            self._corpus_name,
-            self.params_str
-        ] + suffix)
-        return params_str
+        return self._model_name
 
     @property
-    def model_save_path(self):
-        return os.path.join(self._nn_models_dir, self.model_name)
-
-    def _build_model_computational_graph(self):
-        self._net = OrderedDict()
-        self._add_word_embeddings()
-        self._add_condition_embeddings()
-        self._add_utterance_encoder()
-        self._add_context_encoder()
-        self._add_decoder()
-        self._add_output_dense()
-
-    def _compile_theano_functions_for_prediction(self):
-        self._temperature = T.fscalar('temperature')  # theano variable needed for prediction
-        self.predict_prob = self._get_predict_fn(logarithm_output_probs=False)
-        self.predict_prob_one_step = self._get_predict_one_step_fn(logarithm_output_probs=False)
-        self.predict_log_prob = self._get_predict_fn(logarithm_output_probs=True)
-        self.predict_log_prob_one_step = self._get_predict_one_step_fn(logarithm_output_probs=True)
-        self.predict_sequence_score = self._get_predict_sequence_score_fn()
-        self.predict_sequence_score_by_thought_vector = self._get_predict_sequence_score_by_thought_vector_fn()
-        self.get_thought_vectors = self._get_thought_vectors_fn()
-
-    def _add_word_embeddings(self):
-        self._net['input_x'] = InputLayer(
-            shape=(None, None, None), input_var=T.itensor3(name='input_x'), name='input_x')
-
-        self._net['input_y'] = InputLayer(shape=(None, None), input_var=T.imatrix(name='input_y'), name='input_y')
-
-        # Infer these variables from data passed to computation graph since batch shape may differ in training and
-        # prediction phases
-        self._batch_size = self._net['input_x'].input_var.shape[0]
-        self._input_context_size = self._net['input_x'].input_var.shape[1]
-        self._input_seq_len = self._net['input_x'].input_var.shape[2]
-        self._output_seq_len = self._net['input_y'].input_var.shape[1]
-
-        self._net['input_x_batched'] = \
-            reshape(self._net['input_x'], (self._batch_size * self._input_context_size, self._input_seq_len))
-
-        self._net['input_x_mask'] = NotEqualMaskLayer(
-            incoming=self._net['input_x_batched'], x=self._skip_token_id, name='mask_x')
-
-        self._net['emb_x'] = EmbeddingLayer(
-            incoming=self._net['input_x_batched'],
-            input_size=self._vocab_size,
-            output_size=self._word_embedding_dim,
-            W=self._W_init_embedding,
-            name='emb_x')
-        # output shape (batch_size, input_context_size, input_seq_len, embedding_dimension)
-
-        self._net['input_y_mask'] = NotEqualMaskLayer(
-            incoming=self._net['input_y'], x=self._skip_token_id, name='mask_y')
-
-        self._net['emb_y'] = EmbeddingLayer(
-            incoming=self._net['input_y'],
-            input_size=self._vocab_size,
-            output_size=self._word_embedding_dim,
-            W=self._W_init_embedding,
-            name='emb_y')
-        # output shape (batch_size, output_seq_len, embedding_dimension)
-
-        if not self._train_word_embedding:
-            self._net['emb_x'].params[self._net['emb_x'].W].remove('trainable')
-            self._net['emb_y'].params[self._net['emb_y'].W].remove('trainable')
-
-    def _add_forward_backward_encoder_layer(self):
-        is_single_layer_encoder = self._encoder_depth == 1
-        return_only_final_state = is_single_layer_encoder
-
-        # input shape = (batch_size * input_context_size, input_seq_len, embedding_dimension)
-        self._net['enc_forward'] = GRULayer(
-            incoming=self._net['emb_x'],
-            num_units=self._hidden_layer_dim,
-            grad_clipping=self._grad_clip,
-            only_return_final=return_only_final_state,
-            name='encoder_forward',
-            mask_input=self._net['input_x_mask'])
-        # output shape = (batch_size * input_context_size, input_seq_len, hidden_layer_dimension)
-        #             or (batch_size * input_context_size, hidden_layer_dimension)
-
-        # input shape = (batch_size * input_context_size, input_seq_len, embedding_dimension)
-        self._net['enc_backward'] = GRULayer(
-            incoming=self._net['emb_x'],
-            num_units=self._hidden_layer_dim,
-            grad_clipping=self._grad_clip,
-            only_return_final=return_only_final_state,
-            backwards=True,
-            name='encoder_backward',
-            mask_input=self._net['input_x_mask'])
-        # output shape = (batch_size * input_context_size, input_seq_len, hidden_layer_dimension)
-        #             or (batch_size * input_context_size, hidden_layer_dimension)
-
-        self._net['enc_0'] = ConcatLayer(
-            incomings=[self._net['enc_forward'], self._net['enc_backward']],
-            axis=1 if return_only_final_state else 2,
-            name='encoder_bidirectional_concat')
-        # output shape = (batch_size * input_context_size, input_seq_len, 2 * hidden_layer_dimension)
-        #             or (batch_size * input_context_size, 2 * hidden_layer_dimension)
-
-    def _add_condition_embeddings(self):
-        self._net['input_condition_id'] = InputLayer(
-            shape=(None, ), input_var=T.ivector(name='in_condition_id'), name='input_condition_id')
-
-        self._net['emb_condition_id'] = EmbeddingLayer(
-            incoming=self._net['input_condition_id'],
-            input_size=self._condition_ids_num,
-            output_size=self._condition_embedding_dim,
-            name='embedding_condition_id')
-
-    def _add_utterance_encoder(self):
-        # input shape = (batch_size * input_context_size, input_seq_len, embedding_dimension)
-        self._add_forward_backward_encoder_layer()
-
-        for enc_layer_id in xrange(1, self._encoder_depth):
-            is_last_encoder_layer = enc_layer_id == self._encoder_depth - 1
-            return_only_final_state = is_last_encoder_layer
-
-            # input shape = (batch_size * input_context_size, input_seq_len, embedding_dimension)
-            self._net['enc_' + str(enc_layer_id)] = GRULayer(
-                incoming=self._net['enc_' + str(enc_layer_id - 1)],
-                num_units=self._hidden_layer_dim,
-                grad_clipping=self._grad_clip,
-                only_return_final=return_only_final_state,
-                name='encoder_' + str(enc_layer_id),
-                mask_input=self._net['input_x_mask'])
-
-        self._net['enc'] = self._net['enc_' + str(self._encoder_depth - 1)]
-
-        # output shape = (batch_size * input_context_size, hidden_layer_dim)
-
-    def _add_context_encoder(self):
-        self._net['batched_enc'] = reshape(
-            self._net['enc'], (self._batch_size, self._input_context_size, get_output_shape(self._net['enc'])[-1]))
-
-        self._net['context_enc'] = GRULayer(
-            incoming=self._net['batched_enc'],
-            num_units=self._hidden_layer_dim,
-            grad_clipping=self._grad_clip,
-            only_return_final=True,
-            name='context_encoder')
-
-        self._net['switch_enc_to_tv'] = T.iscalar(name='switch_enc_to_tv')
-
-        self._net['thought_vector'] = InputLayer(
-            shape=(None, self._hidden_layer_dim), input_var=T.fmatrix(name='thought_vector'), name='thought_vector')
-
-        self._net['enc_result'] = SwitchLayer(
-            incomings=[self._net['thought_vector'], self._net['context_enc']], condition=self._net['switch_enc_to_tv'])
-
-        # We need the following to pass as 'givens' argument when compiling theano functions:
-        self._default_thoughts_vector = T.zeros((self._batch_size, self._hidden_layer_dim))
-        self._default_input_x = T.zeros(shape=(self._net['thought_vector'].input_var.shape[0], 1, 1), dtype=np.int32)
-
-    def _add_decoder(self):
-        """
-        Decoder returns the batch of sequences of thought vectors, each corresponds to a decoded token
-        reshapes this 3d tensor to 2d matrix so that the next Dense layer can convert each thought vector to
-        a probability distribution vector
-        """
-
-        self._net['hid_states_decoder'] = InputLayer(
-            shape=(None, self._decoder_depth, None),
-            input_var=T.tensor3('hid_inits_decoder'),
-            name='hid_states_decoder')
-
-        # repeat along the sequence axis output_seq_len times, where output_seq_len is inferred from input tensor
-        self._net['enc_repeated'] = RepeatLayer(
-            incoming=self._net['enc_result'],  # input shape = (batch_size, encoder_output_dimension)
-            n=self._output_seq_len,
-            name='repeat_layer')
-
-        self._net['emb_condition_id_repeated'] = RepeatLayer(
-            incoming=self._net['emb_condition_id'], n=self._output_seq_len, name='embedding_condition_id_repeated')
-
-        self._net['dec_concated_input'] = ConcatLayer(
-            incomings=[self._net['emb_y'], self._net['enc_repeated'], self._net['emb_condition_id_repeated']],
-            axis=2,
-            name='decoder_concated_input')
-        # shape = (batch_size, input_seq_len, encoder_output_dimension)
-
-        self._net['dec_0'] = self._net['dec_concated_input']
-
-        for dec_layer_id in xrange(1, self._decoder_depth + 1):
-            # input shape = (batch_size, input_seq_len, embedding_dimension + hidden_dimension)
-            self._net['dec_' + str(dec_layer_id)] = GRULayer(
-                incoming=self._net['dec_' + str(dec_layer_id - 1)],
-                num_units=self._hidden_layer_dim,
-                grad_clipping=self._grad_clip,
-                only_return_final=False,
-                name='decoder_' + str(dec_layer_id),
-                mask_input=self._net['input_y_mask'],
-                hid_init=SliceLayer(self._net['hid_states_decoder'], dec_layer_id - 1, axis=1))
-
-        self._net['dec'] = self._net['dec_' + str(self._decoder_depth)]
-        # output shape = (batch_size, output_seq_len, hidden_dimension)
-
-    @staticmethod
-    def _remove_all_last_tokens(input_layer, unflatten_sequences_shape, flatten_input=True):
-        """
-        Helper function that creates a sequence of layers to clean up the tensor from all elements,
-        corresponding to the last token in the sequence
-        """
-        new_flattened_shape = (unflatten_sequences_shape[0] * (unflatten_sequences_shape[1] - 1),) \
-                              + unflatten_sequences_shape[2:]
-
-        sliced = SliceLayer(
-            incoming=reshape(input_layer, unflatten_sequences_shape) if flatten_input else input_layer,
-            indices=slice(0, -1),
-            axis=1)  # sequence axis
-        return reshape(sliced, new_flattened_shape)
-
-    @staticmethod
-    def _remove_all_first_tokens(input_layer, unflatten_sequences_shape, flatten_input=True):
-        """
-        Helper function that creates a sequence of layers to clean up the tensor from all elements,
-        corresponding to the first token in the sequence
-        """
-        new_flattened_shape = (unflatten_sequences_shape[0] * (unflatten_sequences_shape[1] - 1),) \
-                              + unflatten_sequences_shape[2:]
-
-        sliced = SliceLayer(
-            incoming=reshape(input_layer, unflatten_sequences_shape) if flatten_input else input_layer,
-            indices=slice(1, None),
-            axis=1)  # sequence axis
-        return reshape(sliced, new_flattened_shape)
-
-    def _add_output_dense(self):
-        """
-        Adds a dense layer on top of the decoder to convert hidden_state vector to probs distribution over vocabulary.
-        For every prob sequence last prob vectors are cut off since they correspond
-        to the tokens that go after EOS_TOKEN and we are not interested in them.
-        Doesn't need to reshape back the cut tensor since it's convenient to compare
-        this "long" output with true one-hot vectors.
-        """
-        self._net['dec_dropout'] = DropoutLayer(
-            incoming=reshape(self._net['dec'], (-1, self._hidden_layer_dim)),
-            p=self._dense_dropout_ratio,
-            name='decoder_dropout_layer')
-
-        self._net['target'] = self._remove_all_first_tokens(
-            self._net['input_y'],
-            unflatten_sequences_shape=(self._batch_size, self._output_seq_len),
-            flatten_input=False)
-
-        self._net['dec_dropout_nolast'] = self._remove_all_last_tokens(
-            self._net['dec_dropout'],
-            unflatten_sequences_shape=(self._batch_size, self._output_seq_len, self._hidden_layer_dim))
-
-        self._net['dist_nolast'] = DenseLayer(
-            incoming=self._net['dec_dropout_nolast'],
-            num_units=self._vocab_size,
-            nonlinearity=lasagne.nonlinearities.softmax,
-            name='dense_output_probs')
-
-        dist_layer_params = get_all_params(self._net['dist_nolast'])
-        param_name_to_param = {p.name: p for p in dist_layer_params}
-
-        self._net['dist'] = DenseLayer(
-            incoming=self._net['dec_dropout'],
-            num_units=self._vocab_size,
-            nonlinearity=lasagne.nonlinearities.softmax,
-            W=param_name_to_param['dense_output_probs.W'],
-            b=param_name_to_param['dense_output_probs.b'],
-            name='dense_output_probs')
-        # output tensor has shape (batch_size * (seq_len - 1), vocab_size)
-
-    def _get_train_fn(self):
-        output_probs = get_output(self._net['dist_nolast'])
-
-        mask = get_output(self._net['input_y_mask'])[:, 1:].flatten()
-        nonpad_ids = mask.nonzero()
-
-        target_ids = get_output(self._net['target'])
-        loss_per_object = categorical_crossentropy(predictions=output_probs, targets=target_ids)
-        loss = loss_per_object[nonpad_ids].mean()
-
-        all_params = get_all_params(self._net['dist'], trainable=True)
-
-        _logger.info('Computing train updates...')
-        updates = lasagne.updates.adadelta(loss_or_grads=loss, params=all_params, learning_rate=self._learning_rate)
-
-        _logger.info('Compiling train function...')
-
-        train_fn = theano.function(
-            inputs=[
-                self._net['input_x'].input_var, self._net['input_y'].input_var,
-                self._net['input_condition_id'].input_var
-            ],
-            givens={
-                self._net['hid_states_decoder'].input_var:
-                    T.zeros((self._batch_size, self._decoder_depth, self._hidden_layer_dim)),
-                self._net['thought_vector'].input_var:
-                    self._default_thoughts_vector,
-                self._net['switch_enc_to_tv']:
-                    np.cast[np.int32](False)  # Doesn't compile without explicit casting here
-            },
-            outputs=loss,
-            updates=updates)
-        return train_fn
-
-    def train(self, *args):
-        if not self._train_fn:
-            self._train_fn = self._get_train_fn()
-
-        return self._train_fn(*args)
-
-    def _get_nn_output(self, remove_last_output=True):
-        """
-        :param remove_last_output: If True, prediction for the last token in the sequence is removed.
-         If we predict all the outputs for loss calculation and scoring we need to throw away the last prediction
-         If we only want to get the distribution to predict the next token, this removing is unnecessary.
-        :return:
-        """
-        if 'output_probs' not in self._net:
-            output_probs = get_output(self._net['dist'], deterministic=True)
-            output_probs = T.reshape(output_probs, (self._batch_size, -1, self._vocab_size))
-            self._net['output_probs'] = output_probs
-
-        # We remove the last probability in the sequence to match the input.
-        # output_probs has shape (batch_size * (seq_len - 1), vocab_size)
-        if remove_last_output:
-            return self._net['output_probs'][:, :-1, :]
-            # output_probs has shape (batch_size, seq_len - 1, vocab_size)
-        else:
-            return self._net['output_probs']
-
-    @staticmethod
-    def _perform_temperature_transform(probs, temperature):
-        transformed_log_probs = T.log(probs) / temperature
-        # For numerical stability (e.g. for low temperatures:
-        transformed_log_probs = transformed_log_probs - T.max(transformed_log_probs, axis=2, keepdims=True)
-        # Normalization:
-        return T.exp(transformed_log_probs) / T.sum(T.exp(transformed_log_probs), axis=2, keepdims=True)
-
-    def _get_predict_fn(self, logarithm_output_probs):
-        output_probs = self._get_nn_output()
-
-        _logger.info('Compiling predict function (log_prob=%s)...' % logarithm_output_probs)
-
-        predict_fn = theano.function(
-            inputs=[
-                self._net['input_x'].input_var, self._net['input_y'].input_var,
-                self._net['input_condition_id'].input_var
-            ],
-            givens={
-                self._net['hid_states_decoder'].input_var:
-                    T.zeros((self._batch_size, self._decoder_depth, self._hidden_layer_dim)),
-                self._net['thought_vector'].input_var:
-                    self._default_thoughts_vector,
-                self._net['switch_enc_to_tv']:
-                    np.cast[np.int32](False)  # Doesn't compile without explicit casting here
-            },
-            outputs=T.log(output_probs) if logarithm_output_probs else output_probs)
-        return predict_fn
-
-    def _get_predict_one_step_fn(self, logarithm_output_probs):
-        output_probs = self._get_nn_output(remove_last_output=False)
-        new_hiddens = [
-            get_output(self._net['dec_{}'.format(layer_id)], deterministic=True)
-            for layer_id in xrange(1, self._decoder_depth + 1)
-        ]
-
-        tranformed_output_probs = self._perform_temperature_transform(output_probs, self._temperature)
-
-        _logger.info('Compiling one-step predict function (log_prob=%s)...' % logarithm_output_probs)
-        predict_one_step_fn = theano.function(
-            inputs=[
-                self._net['thought_vector'].input_var, self._net['hid_states_decoder'].input_var,
-                self._net['input_y'].input_var, self._net['input_condition_id'].input_var, self._temperature
-            ],
-            givens={
-                self._net['input_x'].input_var: self._default_input_x,
-                self._net['switch_enc_to_tv']:
-                    np.cast[np.int32](True)  # Doesn't compile without explicit casting here
-            },
-            outputs=[
-                T.concatenate(new_hiddens, axis=1),
-                T.log(tranformed_output_probs) if logarithm_output_probs else tranformed_output_probs
-            ],
-            name='predict_probs_one_step')
-        return predict_one_step_fn
-
-    def _get_thought_vectors_fn(self):
-        thought_vector = get_output(self._net['context_enc'])
-
-        thought_vector_fn = theano.function(inputs=[self._net['input_x'].input_var], outputs=thought_vector)
-        return thought_vector_fn
-
-    def _get_sequence_scores(self):
-        # Calculate log-likelihood for batch of data on GPU in symbolic operationse
-        probs = self._get_nn_output()
-        mask = get_output(self._net['input_y_mask'])
-        # All shapes are symbolic and are evaluated on run-time only after input tensors are supplied
-        batch_size, seq_len, vocab_size = probs.shape
-        total_num_tokens = batch_size * seq_len
-
-        # We need reshape here to do effective slicing without any loops or scans
-        probs_long = probs.reshape((total_num_tokens, vocab_size))
-        output_ids = self._net['input_y'].input_var[:, 1:]
-        mask = mask[:, 1:]  # Do not use first tokens for likelihood computation
-        # (these are start tokens: we don't even have probabilities for them)
-        token_ids_long = output_ids.reshape((total_num_tokens, ))
-
-        # Select probabilities of only observed tokens and reshape back
-        observed_tokens_probs = probs_long[T.arange(total_num_tokens), token_ids_long]
-        observed_tokens_log_probs = T.log(observed_tokens_probs)
-        nonpad_observed_tokens_log_probs = observed_tokens_log_probs.reshape((batch_size, seq_len)) * mask
-        batch_scores = nonpad_observed_tokens_log_probs.sum(axis=1)
-
-        return batch_scores
-
-    def _get_predict_sequence_score_fn(self):
-        batch_scores = self._get_sequence_scores()
-        _logger.info('Compiling sequence scoring function...')
-        predict_score_fn = theano.function(
-            inputs=[
-                self._net['input_x'].input_var, self._net['input_y'].input_var,
-                self._net['input_condition_id'].input_var
-            ],
-            givens={
-                self._net['hid_states_decoder'].input_var:
-                    T.zeros((self._batch_size, self._decoder_depth, self._hidden_layer_dim)),
-                self._net['thought_vector'].input_var:
-                    self._default_thoughts_vector,
-                self._net['switch_enc_to_tv']:
-                    np.cast[np.int32](False)  # Doesn't compile without explicit casting here
-            },
-            outputs=batch_scores,
-            name='predict_sequence_score')
-
-        return predict_score_fn
-
-    def _get_predict_sequence_score_by_thought_vector_fn(self):
-        # We need batch_size symbolic variable to be independent of input_x, to avoid loops in the computational graph
-        batch_size = self._net['input_y'].input_var.shape[0]
-        batch_scores = self._get_sequence_scores()
-        _logger.info('Compiling sequence scoring function (with thought vectors as arguments)...')
-        predict_score_fn = theano.function(
-            inputs=[
-                self._net['thought_vector'].input_var,
-                self._net['input_y'].input_var,
-                self._net['input_condition_id'].input_var,
-            ],
-            givens={
-                self._net['input_x'].input_var:
-                    self._default_input_x,
-                self._net['hid_states_decoder'].input_var:
-                    T.zeros((batch_size, self._decoder_depth, self._hidden_layer_dim)),
-                self._net['switch_enc_to_tv']:
-                    np.cast[np.int32](True)  # Doesn't compile without explicit casting here
-            },
-            outputs=batch_scores,
-            name='predict_sequence_score_by_thought_vector')
-
-        return predict_score_fn
+    def run_metadata(self):
+        return self._run_metadata
+
+    @property
+    def token_to_index(self):
+        return self._token_to_index
 
     @property
     def index_to_token(self):
@@ -595,14 +200,6 @@ class CakeChatModel(object):
         return self._index_to_condition
 
     @property
-    def token_to_index(self):
-        return self._token_to_index
-
-    @property
-    def model_load_path(self):
-        return self._model_load_path
-
-    @property
     def vocab_size(self):
         return self._vocab_size
 
@@ -612,7 +209,7 @@ class CakeChatModel(object):
 
     @property
     def hidden_layer_dim(self):
-        return self._hidden_layer_dim
+        return self._params.hidden_layer_dim
 
     @property
     def decoder_depth(self):
@@ -620,113 +217,516 @@ class CakeChatModel(object):
 
     @property
     def is_reverse_model(self):
-        return self._is_reverse_model
+        return self._params.is_reverse_model
 
-    def load_weights(self):
-        _logger.info('\nLoading saved weights from file:\n{}\n'.format(self.model_load_path))
-        saved_var_name_to_var = OrderedDict(np.load(self.model_load_path))
+    @property
+    def reverse_model(self):
+        return self._reverse_model
 
-        var_name_to_var = OrderedDict([(v.name, v) for v in get_all_params(self._net['dist'])])
-        initialized_vars, missing_vars, mismatched_vars = [], [], []
+    @property
+    def _model_dir(self):
+        return os.path.join(RESULTS_PATH, 'nn_models')
 
-        for var_name, var in iteritems(var_name_to_var):
-            if var_name not in saved_var_name_to_var:
-                missing_vars.append(var_name)
-                continue
+    @property
+    def _model_params(self):
+        return self._params._asdict()
 
-            default_var_value = var.get_value()
-            saved_var_value = saved_var_name_to_var[var_name]
+    @property
+    def _model_progress_resource_path(self):
+        return os.path.join(self.model_path, self._MODEL_PROGRESS_RESOURCE_NAME)
 
-            if default_var_value.shape != saved_var_value.shape:
-                mismatched_vars.append((var_name, default_var_value.shape, saved_var_value.shape))
-                continue
+    def _build_model(self):
+        # embeddings
+        x_tokens_emb_model = self._tokens_embedding_model(name='x_token_embedding')
+        y_tokens_emb_model = self._tokens_embedding_model(name='y_token_embedding')
+        with tf.variable_scope('condition_embedding_scope', reuse=True):
+            condition_emb_model = self._condition_embedding_model()
 
-            # Checks passed, set parameter value
-            var.set_value(saved_var_value)
-            initialized_vars.append(var_name)
-            del saved_var_name_to_var[var_name]
+        # encoding
+        with tf.variable_scope('utterance_scope', reuse=True):
+            utterance_enc_model = self._utterance_encoder(x_tokens_emb_model)
+        with tf.variable_scope('encoder_scope', reuse=True):
+            context_enc_model = self._context_encoder(utterance_enc_model)
 
-        laconic_logger.info('\nRestored saved params:')
-        for var_name in initialized_vars:
-            laconic_logger.info('\t' + var_name)
+        # decoding
+        with tf.variable_scope('decoder_scope', reuse=True):
+            decoder_training_model, decoder_model = self._decoder(y_tokens_emb_model, condition_emb_model)
 
-        laconic_logger.warning('\nMissing saved params:')
-        for var_name in missing_vars:
-            laconic_logger.warning('\t' + var_name)
+        # seq2seq
+        seq2seq_training_model, seq2seq_model = self._seq2seq(context_enc_model, decoder_training_model, decoder_model)
 
-        laconic_logger.warning('\nShapes-mismatched params (saved -> current):')
-        for var_name, default_shape, saved_shape in mismatched_vars:
-            laconic_logger.warning('\t{0:<40} {1:<12} -> {2:<12}'.format(var_name, saved_shape, default_shape))
+        self._models = dict(
+            utterance_encoder=utterance_enc_model,
+            context_encoder=context_enc_model,
+            decoder=decoder_model,
+            seq2seq=seq2seq_model,
+            seq2seq_training=seq2seq_training_model)
 
-        laconic_logger.warning('\nUnused saved params:')
-        for var_name in saved_var_name_to_var:
-            laconic_logger.warning('\t' + var_name)
+        return self._models['seq2seq_training']
 
-        laconic_logger.info('')
+    def _get_training_model(self):
+        def sparse_categorical_crossentropy_logits(y_true, y_pred):
+            return K.sparse_categorical_crossentropy(y_true, y_pred, from_logits=True)
 
-    def save_model(self, save_path):
-        ensure_dir(os.path.dirname(save_path))
-        all_params = get_all_params(self._net['dist'])
-        with open(save_path, 'wb') as f:
-            params = {v.name: v.get_value() for v in all_params}
-            np.savez(f, **params)
+        self._logger.info('Compiling seq2seq for train...')
 
-        _logger.info('\nSaved model:\n{}\n'.format(save_path))
+        self._models['seq2seq_training'].compile(
+            loss=sparse_categorical_crossentropy_logits,
+            optimizer=self._optimizer,
+            options=self._run_options,
+            run_metadata=self._run_metadata)
+
+        return self._models['seq2seq_training']
+
+    def _tokens_embedding_model(self, name='token_embedding'):
+        self._logger.info('Building tokens_embedding_model...')
+
+        tokens_ids = Input(shape=(None, ), dtype='int32', name=name + '_input')
+        # output shape == (batch_size, seq_len)
+
+        tokens_embeddings = Embedding(
+            input_dim=self._vocab_size,
+            output_dim=self._token_embedding_dim,
+            trainable=self._train_token_embedding,
+            name=name,
+            weights=None if self._W_init_embedding is None else [self._W_init_embedding])(tokens_ids)
+        # output shape == (batch_size, seq_len, token_emb_size)
+
+        return Model(tokens_ids, tokens_embeddings, name=name + '_model')
+
+    def _condition_embedding_model(self):
+        self._logger.info('Building condition_embedding_model...')
+
+        condition_id = Input(shape=(1, ), dtype='int32', name='condition_input')
+        # output shape == (batch_size, 1)
+
+        condition_emb = Embedding(
+            input_dim=len(self._condition_to_index),
+            output_dim=self._condition_embedding_dim,
+            name='condition_embedding')(condition_id)
+        # output shape == (batch_size, 1, condition_emb_size)
+
+        condition_emb_reshaped = Reshape(
+            target_shape=(self._condition_embedding_dim, ), name='condition_embedding_reshaped')(condition_emb)
+        # output shape == (batch_size, condition_emb_size)
+
+        return Model(condition_id, condition_emb_reshaped, name='condition_emb_model')
+
+    def _utterance_encoder(self, tokens_emb_model):
+        self._logger.info('Building utterance_encoder...')
+
+        tokens_ids = tokens_emb_model.inputs[0]
+        # output shape == (batch_size, seq_len)
+        tokens_embeddings = tokens_emb_model(tokens_ids)
+        # output shape == (batch_size, seq_len, token_emb_size)
+
+        bidir_enc = Bidirectional(
+            layer=self._rnn_class(
+                units=self._params.hidden_layer_dim, return_sequences=True, name='encoder'),
+            name='bidir_utterance_encoder')(tokens_embeddings)
+        # output shape == (batch_size, seq_len, 2 * hidden_layer_dim)
+
+        utterance_encoding = self._rnn_class(
+            units=self._params.hidden_layer_dim, name='utterance_encoder_final')(bidir_enc)
+        # output shape == (batch_size, hidden_layer_dim)
+
+        return Model(tokens_ids, utterance_encoding, name='utterance_encoder_model')
+
+    def _context_encoder(self, utterance_enc_model):
+        self._logger.info('Building context_encoder...')
+        context_tokens_ids = Input(
+            shape=(self._params.input_context_size, self._params.input_seq_len),
+            dtype='int32',
+            name='context_tokens_ids')
+        # output shape == (batch_size, context_size, seq_len)
+
+        context_utterance_embeddings = TimeDistributed(
+            layer=utterance_enc_model, input_shape=(self._params.input_context_size,
+                                                    self._params.input_seq_len))(context_tokens_ids)
+        # output shape == (batch_size, context_size, utterance_encoding_dim)
+
+        context_encoding = self._rnn_class(
+            units=self._params.hidden_layer_dim, name='context_encoder')(context_utterance_embeddings)
+        # output shape == (batch_size, hidden_layer_dim)
+
+        return Model(context_tokens_ids, context_encoding, name='encoder_model')
+
+    def _decoder(self, tokens_emb_model, condition_emb_model):
+        self._logger.info('Building decoder...')
+
+        thought_vector = Input(shape=(self._params.hidden_layer_dim, ), dtype=K.floatx(), name='dec_thought_vector')
+        # output shape == (batch_size, hidden_layer_dim)
+        response_tokens_ids = tokens_emb_model.inputs[0]
+        # output shape == (batch_size, seq_len)
+        condition_id = condition_emb_model.inputs[0]
+        # output shape == (batch_size, 1)
+        temperature = Input(shape=(1, ), dtype='float32', name='dec_temperature')
+        # output shape == (batch_size, 1)
+
+        # hardcode decoder's depth here: the general solution for any number of stacked rnn layers hs num is too bulky
+        # and we don't need it, so keep it simple, stupid
+        self._decoder_depth = 2
+        # keep inputs for rnn decoder hidden states globally accessible for all model layers that are using them
+        # otherwise you may encounter a keras bug that affects rnn stateful models
+        # related discussion: https://github.com/keras-team/keras/issues/9385#issuecomment-365464721
+        self._dec_hs_input = Input(
+            shape=(self._decoder_depth, self._params.hidden_layer_dim), dtype=K.floatx(), name='dec_hs')
+        # shape == (batch_size, dec_depth, hidden_layer_dim)
+
+        response_tokens_embeddings = tokens_emb_model(response_tokens_ids)
+        # output shape == (batch_size, seq_len, token_emb_size)
+        condition_embedding = condition_emb_model(condition_id)
+        # output shape == (batch_size, cond_emb_size)
+        conditioned_tv = Concatenate(name='conditioned_tv')([thought_vector, condition_embedding])
+        # output shape == (batch_size, hidden_layer_dim + cond_emb_size)
+
+        # Temporary solution:
+        # use a custom lambda function for layer repeating and manually set output_shape
+        # otherwise the consequent Concatenate layer won't work
+        repeated_conditioned_tv = Lambda(
+            function=repeat_vector,
+            mask=lambda inputs, inputs_masks: inputs_masks[0],  # function to get mask of the first input
+            output_shape=(None, self._params.hidden_layer_dim + self._condition_embedding_dim),
+            name='repeated_conditioned_tv')([conditioned_tv, response_tokens_ids])
+        # output shape == (batch_size, seq_len, hidden_layer_dim + cond_emb_size)
+
+        decoder_input = Concatenate(name='concat_emb_cond_tv')([response_tokens_embeddings, repeated_conditioned_tv])
+        # output shape == (batch_size, seq_len, token_emb_size + hidden_layer_dim + cond_emb_size)
+
+        # unpack hidden states to tensors
+        dec_hs_0 = Lambda(
+            function=lambda x: x[:, 0, :], output_shape=(self._params.hidden_layer_dim, ),
+            name='dec_hs_0')(self._dec_hs_input)
+
+        dec_hs_1 = Lambda(
+            function=lambda x: x[:, 1, :], output_shape=(self._params.hidden_layer_dim, ),
+            name='dec_hs_1')(self._dec_hs_input)
+
+        outputs_seq_0, updated_hs_seq_0 = self._rnn_class(
+            units=self._params.hidden_layer_dim, return_sequences=True, return_state=True, name='decoder_0')\
+            (decoder_input, initial_state=dec_hs_0)
+        # outputs_seq_0 and updated_hs_seq_0 shapes == (batch_size, seq_len, hidden_layer_dim)
+
+        outputs_seq_1, updated_hs_seq_1 = self._rnn_class(
+            units=self._params.hidden_layer_dim, return_sequences=True, return_state=True, name='decoder_1')\
+            (outputs_seq_0, initial_state=dec_hs_1)
+        # outputs_seq_1 and updated_hs_seq_1 shapes == (batch_size, seq_len, hidden_layer_dim)
+
+        outputs_dropout = Dropout(rate=self._params.dense_dropout_ratio)(outputs_seq_1)
+        # output shape == (batch_size, seq_len, hidden_layer_dim)
+        tokens_logits = Dense(self._vocab_size)(outputs_dropout)
+        # output shape == (batch_size, seq_len, vocab_size)
+        tokens_probs = softmax_with_temperature(tokens_logits, temperature)
+        # output shape == (batch_size, seq_len, vocab_size)
+
+        # pack updated hidden states into one tensor
+        updated_hs = Concatenate(
+            axis=1, name='updated_hs')([
+                Reshape((1, self._params.hidden_layer_dim))(updated_hs_seq_0),
+                Reshape((1, self._params.hidden_layer_dim))(updated_hs_seq_1)
+            ])
+
+        decoder_training_model = Model(
+            inputs=[thought_vector, response_tokens_ids, condition_id, self._dec_hs_input],
+            outputs=[tokens_logits],
+            name='decoder_training_model')
+
+        decoder_model = Model(
+            inputs=[thought_vector, response_tokens_ids, condition_id, self._dec_hs_input, temperature],
+            outputs=[tokens_probs, updated_hs],
+            name='decoder_model')
+
+        return decoder_training_model, decoder_model
+
+    def _seq2seq(self, context_encoder, decoder_training, decoder):
+        self._logger.info('Building seq2seq...')
+
+        context_tokens_ids = context_encoder.inputs[0]
+        # output shape == (batch_size, context_size, input_seq_len)
+        response_tokens_ids = decoder.inputs[1]
+        # output shape == (batch_size, output_seq_len - 1)
+        condition_id = decoder.inputs[2]
+        # output shape == (batch_size, 1)
+        temperature = decoder.inputs[4]
+        # output shape == (batch_size, 1)
+
+        context_encoding = context_encoder(inputs=[context_tokens_ids])
+        # output shape == (batch_size, hidden_layer_dim)
+
+        tokens_logits = decoder_training(
+            inputs=[context_encoding, response_tokens_ids, condition_id, self._dec_hs_input])
+        # tokens_probs shape == (batch_size, output_seq_len - 1, vocab_size)
+
+        tokens_probs, _ = decoder(
+            inputs=[context_encoding, response_tokens_ids, condition_id, self._dec_hs_input, temperature])
+        # tokens_probs shape == (batch_size, output_seq_len - 1, vocab_size)
+
+        training_model = Model(
+            inputs=[context_tokens_ids, response_tokens_ids, condition_id, self._dec_hs_input],
+            outputs=[tokens_logits],
+            name='seq2seq_training_model')
+
+        model = Model(
+            inputs=[context_tokens_ids, response_tokens_ids, condition_id, self._dec_hs_input, temperature],
+            outputs=[tokens_probs],
+            name='seq2seq_model')
+
+        return training_model, model
+
+    def _get_training_batch_generator(self):
+        # set unique random seed for different workers to correctly process batches in multi-gpu training
+        horovod_seed = self._horovod.rank() if self._horovod else 0
+        epoch_id = 0
+
+        while True:  # inifinite batches generator
+            epoch_id += 1
+
+            for train_batch in get_training_batch(
+                    self._training_data,
+                    self._params.train_batch_size,
+                    random_permute=SHUFFLE_TRAINING_BATCHES,
+                    random_seed=RANDOM_SEED * epoch_id + horovod_seed):
+
+                context_tokens_ids, response_tokens_ids, condition_id = train_batch
+                # response tokens are wraped with _start_ and _end_ tokens
+                # output shape == (batch_size, seq_len)
+
+                # get input response ids by removing last sequence token (_end_)
+                input_response_tokens_ids = response_tokens_ids[:, :-1]
+                # output shape == (batch_size, seq_len - 1)
+
+                # get target response ids by removing the first (_start_) token of the sequence
+                target_response_tokens_ids = response_tokens_ids[:, 1:]
+                # output shape == (batch_size, seq_len - 1)
+
+                # workaround for using sparse_categorical_crossentropy loss
+                # see https://github.com/tensorflow/tensorflow/issues/17150#issuecomment-399776510
+                target_response_tokens_ids = np.expand_dims(target_response_tokens_ids, axis=-1)
+                # output shape == (batch_size, seq_len - 1, 1)
+
+                init_dec_hs = np.zeros(
+                    shape=(context_tokens_ids.shape[0], self._decoder_depth, self._params.hidden_layer_dim),
+                    dtype=K.floatx())
+
+                yield [context_tokens_ids, input_response_tokens_ids, condition_id,
+                       init_dec_hs], target_response_tokens_ids
+
+    def _get_epoch_batches_num(self):
+        return self._batches_num_per_epoch
+
+    def get_utterance_encoding(self, utterance_tokens_ids):
+        """
+        :param utterance_tokens_ids:   shape == (batch_size, seq_len), int32
+        :return: utterance_encoding    shape == (batch_size, hidden_layer_dim), float32
+        """
+        return self._models['utterance_encoder'](utterance_tokens_ids)
+
+    def get_thought_vectors(self, context_tokens_ids):
+        """
+        :param context_tokens_ids,   shape == (batch_size, context_size, seq_len), int32
+        :return: context_encoding,   shape == (batch_size, hidden_layer_dim), float32
+        """
+        return self._models['context_encoder'].predict(context_tokens_ids)
+
+    def predict_prob(self, context_tokens_ids, response_tokens_ids, condition_id, temperature=1.0):
+        """
+        :param context_tokens_ids:      shape == (batch_size, context_size, seq_len), int32
+        :param response_tokens_ids:     shape == (batch_size, seq_len), int32
+        :param condition_id:            shape == (batch_size, 1), int32
+        :param temperature:             float32
+        :return:
+            tokens_probs:               shape == (batch_size, seq_len, vocab_size), float32
+        """
+        # remove last token, but keep first token to match seq2seq decoder input's shape
+        response_tokens_ids = response_tokens_ids[:, :-1]
+        # shape == (batch_size, seq_len - 1)
+
+        init_dec_hs = np.zeros(
+            shape=(context_tokens_ids.shape[0], self._decoder_depth, self._params.hidden_layer_dim), dtype=K.floatx())
+        # shape == (batch_size, decoder_depth, hidden_layer_dim)
+
+        temperature = np.full_like(condition_id, temperature, dtype=np.float32)
+        # shape == (batch_size, 1)
+
+        tokens_probs = self._models['seq2seq'].predict(
+            [context_tokens_ids, response_tokens_ids, condition_id, init_dec_hs, temperature])
+        # shape == (batch_size, seq_len - 1, vocab_size)
+        return tokens_probs
+
+    def predict_prob_by_thought_vector(self, thought_vector, response_tokens_ids, condition_id, temperature=1.0):
+        """
+        :param thought_vector:          shape == (batch_size, hidden_layer_dim), float32
+        :param response_tokens_ids:     shape == (batch_size, seq_len), int32
+        :param condition_id:            shape == (batch_size, 1), int32
+        :param temperature:             float32
+        :return:
+            tokens_probs:               shape == (batch_size, seq_len, vocab_size), float32
+        """
+        # remove last token, but keep first token to match seq2seq decoder input's shape
+        response_tokens_ids = response_tokens_ids[:, :-1]
+        # output shape == (batch_size, seq_len - 1)
+
+        init_dec_hs = \
+            np.zeros((thought_vector.shape[0], self._decoder_depth, self._params.hidden_layer_dim), dtype=K.floatx())
+        # shape == (batch_size, decoder_depth, hidden_layer_dim)
+
+        temperature = np.full_like(condition_id, temperature, dtype=np.float32)
+        # shape == (batch_size, 1)
+
+        tokens_probs, _ = self._models['decoder'].predict(
+            [thought_vector, response_tokens_ids, condition_id, init_dec_hs, temperature])
+        # shape == (batch_size, seq_len - 1, vocab_size)
+        return tokens_probs
+
+    def predict_prob_one_step(self, thought_vector, prev_hidden_states, prev_tokens_id, condition_id, temperature=1.0):
+        """
+        :param thought_vector:          shape == (batch_size, hidden_layer_dim), float32
+        :param prev_hidden_states:      shape == (batch_size, 2, hidden_layer_dim), float32
+        :param prev_tokens_id:          shape == (batch_size, 1), int32
+        :param condition_id:            shape == (batch_size, 1), int32
+        :param temperature:             float32
+        :return:
+            updated_hidden_states:      shape == (batch_size, 2, hidden_layer_dim), float32
+            transformed_token_prob:     shape == (batch_size, vocab_size), float32
+        """
+        temperature = np.full_like(prev_tokens_id, temperature, dtype=np.float32)
+        # shape == (batch_size, 1)
+
+        token_prob, updated_hidden_states = self._models['decoder'].predict(
+            [thought_vector, prev_tokens_id, condition_id, prev_hidden_states, temperature])
+        return updated_hidden_states, token_prob
+
+    def predict_log_prob(self, context_tokens_ids, response_tokens_ids, condition_id, temperature=1.0):
+        """
+        :param context_tokens_ids:      shape == (batch_size, context_size, seq_len), int32
+        :param response_tokens_ids:     shape == (batch_size, seq_len), int32
+        :param condition_id:            shape == (batch_size, 1), int32
+        :param temperature:             float32
+        :return:
+            tokens_probs:               shape == (batch_size, seq_len, vocab_size), float32
+        """
+        tokens_probs = self.predict_prob(context_tokens_ids, response_tokens_ids, condition_id, temperature)
+
+        tokens_log_probs = np.log(tokens_probs)
+        return tokens_log_probs
+
+    def predict_log_prob_one_step(self,
+                                  thought_vector,
+                                  prev_hidden_states,
+                                  prev_tokens_id,
+                                  condition_id,
+                                  temperature=1.0):
+        """
+        :param thought_vector:          shape == (batch_size, hidden_layer_dim), float32
+        :param prev_hidden_states:      shape == (batch_size, 2 * hidden_layer_dim), float32
+        :param prev_tokens_id:          shape == (batch_size, 1), int32
+        :param condition_id:            shape == (batch_size, 1), int32
+        :param temperature:             float32
+        :return:
+            updated_hidden_states:      shape == (batch_size, 2 * hidden_layer_dim), float32
+            transformed_token_prob:     shape == (batch_size, vocab_size), float32
+        """
+        updated_hidden_states, token_prob = self.predict_prob_one_step(thought_vector, prev_hidden_states,
+                                                                       prev_tokens_id, condition_id, temperature)
+
+        token_log_prob = np.log(token_prob)
+        return updated_hidden_states, token_log_prob
+
+    def _compute_sequence_score(self, tokens_ids, tokens_probs):
+        """
+        :param tokens_ids:      shape == (batch_size, seq_len), int32
+        :param tokens_probs:    shape == (batch_size, seq_len - 1, vocab_size), float32
+        :return:
+        """
+        mask = tokens_ids != self._skip_token_id
+        # shape == (batch_size, seq_len)
+
+        # All shapes are symbolic and are evaluated on run-time only after input tensors are supplied
+        batch_size, truncated_seq_len, vocab_size = tokens_probs.shape
+        total_tokens_num = batch_size * truncated_seq_len
+
+        # We need to reshape here for effective slicing without any loops or scans
+        probs_long = tokens_probs.reshape((total_tokens_num, vocab_size))
+        # shape == (batch_size * (seq_len - 1), vocab_size), float32
+
+        # Do not use first tokens for likelihood computation:
+        # these are _start_ tokens, we don't have probabilities for them
+        output_ids = tokens_ids[:, 1:]
+        # shape == (batch_size, seq_len - 1)
+        mask = mask[:, 1:]
+        # shape == (batch_size, seq_len - 1)
+
+        token_ids_flattened = output_ids.reshape((total_tokens_num, ))
+        # shape == (batch_size * (seq_len - 1))
+
+        # Select probabilities of only observed tokens and reshape back
+        observed_tokens_probs = probs_long[np.arange(total_tokens_num), token_ids_flattened]
+        # shape == (batch_size * (seq_len - 1), )
+        observed_tokens_log_probs = np.log(observed_tokens_probs)
+        # shape == (batch_size * (seq_len - 1), )
+        nonpad_observed_tokens_log_probs = observed_tokens_log_probs.reshape((batch_size, truncated_seq_len)) * mask
+        # shape == (batch_size, seq_len - 1)
+
+        batch_scores = nonpad_observed_tokens_log_probs.sum(axis=1)
+        # shape == (batch_size, )
+        return batch_scores
+
+    def predict_sequence_score(self, context_tokens_ids, response_tokens_ids, condition_id):
+        """
+        :param context_tokens_ids:      shape == (batch_size, context_size, seq_len), int32
+        :param response_tokens_ids:     shape == (batch_size, seq_len), int32
+        :param condition_id:            shape == (batch_size, 1), int32
+        :return:
+            sequence_score:             shape == (batch_size, 1), float32
+        """
+        response_tokens_probs = self.predict_prob(context_tokens_ids, response_tokens_ids, condition_id)
+        # output shape == (batch_size, seq_len - 1, vocab_size)
+
+        return self._compute_sequence_score(response_tokens_ids, response_tokens_probs)
+
+    def predict_sequence_score_by_thought_vector(self, thought_vector, response_tokens_ids, condition_id):
+        """
+        :param thought_vector:          shape == (batch_size, hidden_layer_dim), float32
+        :param response_tokens_ids:     shape == (batch_size, seq_len), int32
+        :param condition_id:            shape == (batch_size, 1), int32
+        :return:
+            sequence_score:             shape == (batch_size, 1), float32
+        """
+        response_tokens_probs = self.predict_prob_by_thought_vector(thought_vector, response_tokens_ids, condition_id)
+        # output shape == (batch_size, seq_len - 1, vocab_size)
+
+        return self._compute_sequence_score(response_tokens_ids, response_tokens_probs)
+
+    def _evaluate(self):
+        self._logger.info('Evaluating model\'s perplexity...')
+        metrics = {}
+
+        for dataset_name, dataset in self._validation_data.items():
+            perplexity = calculate_model_mean_perplexity(self, dataset)
+            metrics[dataset_name] = {'perplexity': perplexity}
+
+        return metrics
 
     @staticmethod
-    def delete_model(delete_path):
-        if not os.path.isfile(delete_path):
-            _logger.warning('Couldn\'t delete model. File not found:\n"{}"'.format(delete_path))
+    def _build_embedding_matrix(token_to_index, w2v_model, embedding_dim):
+        embedding_matrix = np.zeros((len(token_to_index), embedding_dim))
+        for token, index in token_to_index.items():
+            embedding_matrix[index] = get_token_vector(token, w2v_model, embedding_dim)
+
+        return embedding_matrix
+
+    @staticmethod
+    def _get_metric_mean(metrics, metric_name):
+        return np.mean([metrics[dataset_name][metric_name] for dataset_name in metrics])
+
+    def _is_better_model(self, new_metrics, old_metrics):
+        return self._get_metric_mean(new_metrics, metric_name='perplexity') < \
+               self._get_metric_mean(old_metrics, metric_name='perplexity')
+
+    def _load_model_if_exists(self):
+        if self._model_init_path:
+            self._model = self._load_model(self._model, self._model_init_path)
             return
 
-        os.remove(delete_path)
-        _logger.info('\nModel is deleted:\n{}'.format(delete_path))
-
-    def print_layer_shapes(self):
-        laconic_logger.info('Net shapes:')
-
-        layers = get_all_layers(self._net['dist'])
-        for l in layers:
-            laconic_logger.info('\t%-20s \t%s' % (l.name, get_output_shape(l)))
-
-    def print_matrices_weights(self):
-        laconic_logger.info('\nNet matrices weights:')
-        params = get_all_params(self._net['dist'])
-        values = get_all_param_values(self._net['dist'])
-
-        total_network_size = 0
-        for p, v in zip(params, values):
-            param_size = float(v.nbytes) / 1024 / 1024
-            # Work around numpy/python 3 regression: 
-            # http://www.markhneedham.com/blog/2017/11/19/python-3-typeerror-unsupported-format-string-passed-to-numpy-ndarray-__format__/
-            laconic_logger.info('\t{0:<40} dtype: {1:<10} shape: {2:<12} size: {3:<.2f}M'.format(
-                p.name, repr(v.dtype), repr(v.shape), param_size))
-            total_network_size += param_size
-        laconic_logger.info('Total network size: {0:.1f} Mb'.format(total_network_size))
-
-
-def get_nn_model(index_to_token, index_to_condition, model_init_path=None, w2v_matrix=None, resolver_factory=None,
-                 is_reverse_model=False):
-    model = CakeChatModel(index_to_token,
-                          index_to_condition,
-                          model_init_path=model_init_path,
-                          init_embedding=w2v_matrix,
-                          is_reverse_model=is_reverse_model)
-
-    model.print_layer_shapes()
-
-    # try to initialise model with pre-trained weights
-    resolver = resolver_factory(model.model_load_path) if resolver_factory else DummyFileResolver(model.model_load_path)
-    model_exists = resolver.resolve()
-
-    if model_exists:
-        model.load_weights()
-    elif model_init_path:
-        raise FileNotFoundException('Can\'t initialize model from file:\n{}\n'.format(model_init_path))
-    else:
-        _logger.info('\nModel will be built with initial weights.\n')
-
-    model.print_matrices_weights()
-    _logger.info('\nModel is built\n')
-
-    return model, model_exists
+        # proceed with usual process of weights loading if no _model_init_path is passed
+        super(CakeChatModel, self)._load_model_if_exists()

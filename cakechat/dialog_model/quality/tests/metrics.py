@@ -1,6 +1,11 @@
+import os
+import sys
 import unittest
 
 import numpy as np
+
+sys.path.append(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))))
 
 from cakechat.dialog_model.quality.metrics.perplexity import _calculate_mean_perplexity
 from cakechat.dialog_model.quality.metrics.utils import MetricsException

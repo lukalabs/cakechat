@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 import argparse
 import os
 import sys
@@ -26,7 +24,7 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
-    url = 'http://%s:%s/cakechat_api/v1/actions/get_response' % (args.fqdn, args.port)
+    url = 'http://{}:{}/cakechat_api/v1/actions/get_response'.format(args.fqdn, args.port)
     body = {'context': args.context, 'emotion': args.emotion}
 
     response = requests.post(url, json=body)

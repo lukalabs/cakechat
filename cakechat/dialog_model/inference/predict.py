@@ -69,7 +69,7 @@ def get_nn_response_ids(context_token_ids,
         kwargs['samples_num'] = output_candidates_num
 
     prediction_config = PredictionConfig(mode, **kwargs)
-    _logger.debug('Generating predicted response for the following params: %s' % prediction_config)
+    _logger.debug('Generating predicted response for the following params: {}'.format(prediction_config))
 
     predictor = predictor_factory(nn_model, mode, prediction_config.get_options_dict())
     responses = predictor.predict_responses(context_token_ids, output_seq_len, condition_ids, output_candidates_num)
@@ -98,12 +98,14 @@ def get_nn_responses(context_token_ids,
     :return: list of lists of strings, shape (contexts_num, output_candidates_num)
     """
 
-    response_tokens_ids = get_nn_response_ids(context_token_ids, nn_model, mode, output_candidates_num,
-                                              output_seq_len, condition_ids, **kwargs)
+    response_tokens_ids = get_nn_response_ids(context_token_ids, nn_model, mode, output_candidates_num, output_seq_len,
+                                              condition_ids, **kwargs)
     # shape (contexts_num, output_candidates_num, output_seq_len), numpy array of integers
 
-    responses = [transform_token_ids_to_sentences(response_candidates_tokens_ids, nn_model.index_to_token)
-                 for response_candidates_tokens_ids in response_tokens_ids]
+    responses = [
+        transform_token_ids_to_sentences(response_candidates_tokens_ids, nn_model.index_to_token)
+        for response_candidates_tokens_ids in response_tokens_ids
+    ]
     # responses shape (contexts_num, output_candidates_num), list of lists of strings
 
     return responses

@@ -1,9 +1,9 @@
 import numpy as np
-from six.moves import xrange
 
 from cakechat.config import PREDICTION_MODE_FOR_TESTS, DEFAULT_TEMPERATURE, BEAM_SIZE, \
     PREDICTION_DISTINCTNESS_NUM_TOKENS
 from cakechat.dialog_model.inference import get_nn_response_ids, ServiceTokensIDs
+from cakechat.utils.profile import timer
 
 
 def _calculate_distinct_ngrams(prediction_samples, ngram_len):
@@ -14,7 +14,7 @@ def _calculate_distinct_ngrams(prediction_samples, ngram_len):
     ngrams = set()
     for y in prediction_samples:
         # Calculate all n-grams where n = ngram_len. (Get ngram_len cyclic shifts of y and transpose the result)
-        cur_ngrams = zip(*[y[i:] for i in xrange(ngram_len)])  # yapf: disable
+        cur_ngrams = list(zip(*[y[i:] for i in range(ngram_len)]))  # yapf: disable
 
         # Aggregate statistics
         ngrams.update(cur_ngrams)
@@ -22,6 +22,7 @@ def _calculate_distinct_ngrams(prediction_samples, ngram_len):
     return len(ngrams)
 
 
+@timer
 def calculate_response_ngram_distinctness(x,
                                           nn_model,
                                           ngram_len,
@@ -62,4 +63,4 @@ def calculate_response_ngram_distinctness(x,
                 break
 
     distinct_ngrams = _calculate_distinct_ngrams(responses, ngram_len)
-    return float(distinct_ngrams) / num_tokens_to_generate
+    return distinct_ngrams / num_tokens_to_generate

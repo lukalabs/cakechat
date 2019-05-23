@@ -1,15 +1,16 @@
+# tensorflow and horovod should be presented in a base docker image or installed manually (see requirements-local.txt)
 flask==1.0.2
-numpy==1.14.4
-pandas==0.23.0
-Theano==0.9.0
-https://github.com/Lasagne/Lasagne/archive/master.zip
+numpy==1.16.0
+pandas==0.23.4
 unicodecsv==0.14.1
 requests==2.21.0
-nltk==3.2.5
-scipy==0.19.1
-scikit-learn==0.19.1
-tensorboard-logger==0.0.4
-telepot==12.5
+nltk==3.4
+scipy==1.2.0
+scikit-learn==0.20.2
+keras==2.2.4
+telepot==12.6  # 12.6 is the latest version compatible (via aiohttp) with python 3.5.2 (ubuntu 16.04 default)
 gensim==1.0.1
-six==1.11.0
-cachetools==2.1.0
+cachetools==3.0.0
+# Internal requirements
+gunicorn==19.9.0
+tqdm==4.30.0

@@ -1,28 +1,30 @@
 from itertools import islice
 
 import numpy as np
-import theano
-from six import text_type
-from six.moves import xrange, map, zip
 
-from cakechat.config import TRAIN_CORPUS_NAME, WORD_EMBEDDING_DIMENSION, INPUT_CONTEXT_SIZE, INPUT_SEQUENCE_LENGTH, DEFAULT_CONDITION, \
-    S3_MODELS_BUCKET_NAME, S3_W2V_REMOTE_DIR, OUTPUT_SEQUENCE_LENGTH, W2V_WINDOW_SIZE, USE_SKIP_GRAM
+from cakechat.config import INPUT_CONTEXT_SIZE, INPUT_SEQUENCE_LENGTH, DEFAULT_CONDITION, OUTPUT_SEQUENCE_LENGTH, \
+    AUTOENCODER_MODE, RANDOM_SEED, INTX
 from cakechat.utils.data_types import Dataset
 from cakechat.utils.logger import get_logger
-from cakechat.utils.s3 import S3FileResolver
 from cakechat.utils.tee_file import file_buffered_tee
 from cakechat.utils.text_processing import SPECIAL_TOKENS
-from cakechat.utils.w2v import get_w2v_model
 
 _logger = get_logger(__name__)
+
+
+class ModelLoaderException(Exception):
+    pass
 
 
 def transform_conditions_to_ids(conditions, condition_to_index, n_dialogs):
     condition_ids_iterator = map(
         lambda condition: condition_to_index.get(condition, condition_to_index[DEFAULT_CONDITION]), conditions)
-    condition_ids = np.full(n_dialogs, condition_to_index[DEFAULT_CONDITION], dtype=np.int32)
+    condition_ids = np.full(n_dialogs, condition_to_index[DEFAULT_CONDITION], dtype=INTX)
+    # shape == (n_dialogs, )
     for sample_idx, condition_id in enumerate(condition_ids_iterator):
         condition_ids[sample_idx] = condition_id
+
+    # shape == (n_dialogs, 1)
     return condition_ids
 
 
@@ -48,7 +50,7 @@ def transform_contexts_to_token_ids(tokenized_contexts,
     :param max_context_len: maximum context length
     :param max_contexts_num: maximum number of contexts
     :param add_start_end: add start/end tokens to sequence
-    :return: X -- numpy array, dtype=np.int32, shape = (max_lines_num, max_context_len, max_line_len).
+    :return: X -- numpy array, dtype=INTX, shape = (max_lines_num, max_context_len, max_line_len).
     """
 
     if max_contexts_num is None:
@@ -56,8 +58,7 @@ def transform_contexts_to_token_ids(tokenized_contexts,
             raise TypeError('tokenized_lines should has list type if max_lines_num is not specified')
         max_contexts_num = len(tokenized_contexts)
 
-    X = np.full(
-        (max_contexts_num, max_context_len, max_line_len), token_to_index[SPECIAL_TOKENS.PAD_TOKEN], dtype=np.int32)
+    X = np.full((max_contexts_num, max_context_len, max_line_len), token_to_index[SPECIAL_TOKENS.PAD_TOKEN], dtype=INTX)
 
     for context_idx, context in enumerate(tokenized_contexts):
         if context_idx >= max_contexts_num:
@@ -91,7 +92,7 @@ def transform_lines_to_token_ids(tokenized_lines, token_to_index, max_line_len, 
     :param max_line_len: maximum number of tokens in a lineh
     :param max_lines_num: maximum number of lines
     :param add_start_end: add start/end tokens to sequence
-    :return: X -- numpy array, dtype=np.int32, shape = (max_lines_num, max_line_len).
+    :return: X -- numpy array, dtype=INTX, shape = (max_lines_num, max_line_len).
     """
 
     if max_lines_num is None:
@@ -99,7 +100,7 @@ def transform_lines_to_token_ids(tokenized_lines, token_to_index, max_line_len, 
             raise TypeError('tokenized_lines should has list type if max_lines_num is not specified')
         max_lines_num = len(tokenized_lines)
 
-    X = np.full((max_lines_num, max_line_len), token_to_index[SPECIAL_TOKENS.PAD_TOKEN], dtype=np.int32)
+    X = np.full((max_lines_num, max_line_len), token_to_index[SPECIAL_TOKENS.PAD_TOKEN], dtype=INTX)
 
     for line_idx, line in enumerate(tokenized_lines):
         if line_idx >= max_lines_num:
@@ -128,9 +129,9 @@ def transform_token_ids_to_sentences(y_ids, index_to_token):
     n_responses, n_tokens = y_ids.shape
 
     responses = []
-    for resp_idx in xrange(n_responses):
+    for resp_idx in range(n_responses):
         response_tokens = []
-        for token_idx in xrange(n_tokens):
+        for token_idx in range(n_tokens):
             token_to_add = index_to_token[y_ids[resp_idx, token_idx]]
 
             if token_to_add in [SPECIAL_TOKENS.EOS_TOKEN, SPECIAL_TOKENS.PAD_TOKEN]:
@@ -140,9 +141,6 @@ def transform_token_ids_to_sentences(y_ids, index_to_token):
             response_tokens.append(token_to_add)
 
         response_str = ' '.join(response_tokens)
-        if not isinstance(response_str, text_type):
-            response_str = response_str.decode('utf-8')
-
         responses.append(response_str)
     return responses
 
@@ -160,11 +158,11 @@ def transform_context_token_ids_to_sentences(x_ids, index_to_token):
     n_samples, n_contexts, n_tokens = x_ids.shape
 
     samples = []
-    for sample_idx in xrange(n_samples):
+    for sample_idx in range(n_samples):
         context_samples = []
-        for cont_idx in xrange(n_contexts):
+        for cont_idx in range(n_contexts):
             sample_tokens = []
-            for token_idx in xrange(n_tokens):
+            for token_idx in range(n_tokens):
                 token_to_add = index_to_token[x_ids[sample_idx, cont_idx, token_idx]]
 
                 if token_to_add == SPECIAL_TOKENS.EOS_TOKEN or token_to_add == SPECIAL_TOKENS.PAD_TOKEN:
@@ -175,9 +173,6 @@ def transform_context_token_ids_to_sentences(x_ids, index_to_token):
                 sample_tokens.append(token_to_add)
 
             sample_str = ' '.join(sample_tokens)
-            if not isinstance(sample_str, text_type):
-                sample_str = sample_str.decode('utf-8')
-
             context_samples.append(sample_str)
         samples.append(' / '.join(context_samples))
     return samples
@@ -189,7 +184,7 @@ def _get_token_vector(token, w2v_model):
     elif token == SPECIAL_TOKENS.PAD_TOKEN:
         return np.zeros(w2v_model.vector_size)
     else:
-        _logger.warning('Can\'t find token [%s] in w2v dict' % token)
+        _logger.warning('Can\'t find token [{}] in w2v dict'.format(token))
         if not hasattr(_get_token_vector, 'unk_vector'):
             if SPECIAL_TOKENS.UNKNOWN_TOKEN in w2v_model.wv.vocab:
                 _get_token_vector.unk_vector = np.array(w2v_model[SPECIAL_TOKENS.UNKNOWN_TOKEN])
@@ -198,45 +193,22 @@ def _get_token_vector(token, w2v_model):
         return _get_token_vector.unk_vector
 
 
-def transform_w2v_model_to_matrix(w2v_model, index_to_token):
-    _logger.info('Preparing embedding matrix based on w2v_model and index_to_token dict')
-
-    token_to_index = {v: k for k, v in index_to_token.items()}
-    tokens_num = len(index_to_token)
-    output = np.zeros((tokens_num, WORD_EMBEDDING_DIMENSION), dtype=theano.config.floatX)
-    for token in index_to_token.values():
-        idx = token_to_index[token]
-        output[idx] = _get_token_vector(token, w2v_model)
-
-    return output
-
-
-def get_w2v_embedding_matrix(tokenized_dialog_lines, index_to_token, add_start_end=False):
-    if add_start_end:
-        tokenized_dialog_lines = (
-            [SPECIAL_TOKENS.START_TOKEN] + line + [SPECIAL_TOKENS.EOS_TOKEN] for line in tokenized_dialog_lines)
-
-    w2v_resolver_factory = S3FileResolver.init_resolver(bucket_name=S3_MODELS_BUCKET_NAME, remote_dir=S3_W2V_REMOTE_DIR)
-
-    w2v_model = get_w2v_model(
-        TRAIN_CORPUS_NAME,
-        len(index_to_token),
-        model_resolver_factory=w2v_resolver_factory,
-        tokenized_lines=tokenized_dialog_lines,
-        vec_size=WORD_EMBEDDING_DIMENSION,
-        window_size=W2V_WINDOW_SIZE,
-        skip_gram=USE_SKIP_GRAM)
-    w2v_matrix = transform_w2v_model_to_matrix(w2v_model, index_to_token)
-    return w2v_matrix
-
-
-def get_training_batch(inputs, batch_size, random_permute=False):
+def get_training_batch(inputs, batch_size, random_permute=False, random_seed=RANDOM_SEED):
+    """
+    Generator that yields data in batches. The last batch may be incomplete, yield it as well.
+    :param inputs: tuple of numpy arrays, for example (contexts_ids, responses_ids, conditions_ids)
+    :param batch_size: length of numpy arrays to be yielded for each input
+    :param random_permute: if True input arrays data will be synchronously shuffled before yielding
+    :param random_seed: seed to ensure the identical shuffling of input data for experiments reproducibility
+    :return: generator that yields tuples of numpy arrays with batch_size length
+    """
     n_samples = inputs[0].shape[0]
     n_batches = n_samples // batch_size
     batches_seq = np.arange(n_batches)
     samples_seq = np.arange(n_samples)
 
     if random_permute:
+        np.random.seed(random_seed)
         np.random.shuffle(samples_seq)
 
     for i in batches_seq:
@@ -318,7 +290,7 @@ def _get_x_data_iterator_with_context(x_data_iterator, y_data_iterator, context_
         last_y_line = y_line
 
 
-def transform_lines_to_nn_input(tokenized_dialog_lines, token_to_index):
+def transform_lines_to_nn_input(tokenized_dialog_lines, token_to_index, autoencoder_mode=AUTOENCODER_MODE):
     """
     Splits lines (IterableSentences) and generates numpy arrays of token ids suitable for training.
     Doesn't store all lines in memory.
@@ -328,9 +300,11 @@ def transform_lines_to_nn_input(tokenized_dialog_lines, token_to_index):
     _logger.info('Iterating through lines to get number of elements in the dataset')
     n_dialogs = sum(1 for _ in iterator_for_len_calc)
 
-    x_data_iterator = islice(x_data_iterator, 0, None, 2)
-    y_data_iterator = islice(y_data_iterator, 1, None, 2)
-    n_dialogs //= 2
+    if not autoencoder_mode:
+        # seq2seq mode
+        x_data_iterator = islice(x_data_iterator, 0, None, 2)
+        y_data_iterator = islice(y_data_iterator, 1, None, 2)
+        n_dialogs //= 2
 
     y_data_iterator, y_data_iterator_for_context = file_buffered_tee(y_data_iterator)
     x_data_iterator = _get_x_data_iterator_with_context(x_data_iterator, y_data_iterator_for_context)

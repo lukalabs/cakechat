@@ -2,13 +2,13 @@ import os
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-from cakechat.config import TRAIN_CORPUS_NAME, BASE_CORPUS_NAME, DATA_DIR
+from cakechat.config import TRAIN_CORPUS_NAME, BASE_CORPUS_NAME, RESULTS_PATH
 from cakechat.utils.files_utils import get_persisted
 from cakechat.utils.text_processing import load_index_to_item, get_tokens_sequence, get_processed_corpus_path, \
     load_processed_dialogs_from_json, FileTextLinesIterator, get_dialog_lines_and_conditions, \
     get_alternated_dialogs_lines, get_index_to_token_path
 
-_TFIDF_VECTORIZER_FULL_PATH = os.path.join(DATA_DIR, 'tfidf_vectorizer.pickle')
+_TFIDF_VECTORIZER_FULL_PATH = os.path.join(RESULTS_PATH, 'tfidf_vectorizer.pickle')
 
 
 def _load_train_lines(corpus_name=TRAIN_CORPUS_NAME):

@@ -1,64 +1,53 @@
-import theano.tensor as T
-from lasagne.layers.base import MergeLayer, Layer
-from six.moves import xrange
+from keras.layers import K, RepeatVector, Lambda
 
 
-class RepeatLayer(Layer):
+def repeat_vector(inputs):
     """
-    Layer that repeats input n times along 1 axis and reshapes.
-    The idea is to take some data for each object in the batch and repeat n times along the sequence axis.
-    For example for repeating thought vector returned by encoder to feed into decoder in SEQ2SEQ model.
+    Temporary solution:
+    Use this function within a Lambda layer to get a repeated layer with a variable 1-st dimension (seq_len).
+    May be useful to further feed it to a Concatenate layer.
 
-    input: tensor of shape N_1 x N_2 x ... x N_D
-    output: tensor of shape N_1 x n x N_2 x ... x N_D
+    inputs == (layer_for_repeat, layer_for_getting_rep_num):
+        layer_for_repeat:           shape == (batch_size, vector_dim)
+        layer_for_getting_rep_num:  shape == (batch_size, seq_len, ...)
+    :return:
+        repeated layer_for_repeat, shape == (batch_size, seq_len, vector_dim)
     """
-
-    def __init__(self, incoming, n, **kwargs):
-        super(RepeatLayer, self).__init__(incoming, **kwargs)
-        self._n = n
-
-    def get_output_shape_for(self, input_shape):
-        repeat_times = None if isinstance(self._n, T.TensorVariable) else self._n
-        return tuple([input_shape[0], repeat_times] + list(input_shape[1:]))
-
-    def get_output_for(self, input, **kwargs):
-        new_shape = [input.shape[0], 1] + [input.shape[k] for k in xrange(1, input.ndim)]
-
-        output = T.reshape(input, new_shape, ndim=input.ndim + 1)  # see the details in pydoc
-        output = T.repeat(output, self._n, axis=1)
-        return output
+    layer_for_repeat, layer_for_getting_rep_num = inputs
+    repeated_vector = RepeatVector(
+        n=K.shape(layer_for_getting_rep_num)[1], name='custom_repeat_vector')(layer_for_repeat)
+    # shape == (batch_size, seq_len, vector_dim)
+    return repeated_vector
 
 
-class NotEqualMaskLayer(Layer):
+def softmax_with_temperature(logits, temperature):
     """
-    Layer that outputs binary matrix according to elementwise non-equality to a specific element
+    :param logits:      shape == (batch_size, seq_len, vocab_size), float32
+    :param temperature: shape == (batch_size, 1), float32
+    :return:
+        transformed tokens probs, shape == (batch_size, seq_len, vocab_size), float32
     """
 
-    def __init__(self, incoming, x, **kwargs):
-        super(NotEqualMaskLayer, self).__init__(incoming, **kwargs)
-        self._x = x
+    def softmax_with_temp(args):
+        logits, temperature = args
+        repeat_num = K.shape(logits)[1]
+        temperature_repeated = RepeatVector(repeat_num)(temperature)
+        # shape == (batch_size, seq_len)
+        scaled_logits = logits / temperature_repeated
+        # shape == (batch_size, seq_len, vocab_size)
 
-    def get_output_shape_for(self, input_shape):
-        return input_shape
+        # for numerical stability (e.g. for low temperatures):
+        scaled_logits = scaled_logits - K.max(scaled_logits, axis=2, keepdims=True)
+        # shape == (batch_size, seq_len, vocab_size)
+        transformed_probs = K.softmax(scaled_logits)
+        # shape == (batch_size, seq_len, vocab_size)
+        return transformed_probs
 
-    def get_output_for(self, input, **kwargs):
-        return T.neq(input, self._x)
+    # wrap transformation in Lambda to turn the result to Keras layer
+    transformed_probs = Lambda(
+        function=softmax_with_temp,
+        mask=lambda inputs, inputs_masks: inputs_masks[0],  # function to get mask of the first input
+        name='softmax_with_temperature')([logits, temperature])
+    # output shape == (batch_size, seq_len, vocab_size)
 
-
-class SwitchLayer(MergeLayer):
-    """
-    Layer that performs switching from one input to another according to the condition which is theano.iscalar that contains 0 or 1.
-    If condition contains 1 then the output will be the output of the first layer in incomings.
-    If condition contains 0 then the output will be the output of the second layer in incomings.
-    """
-
-    def __init__(self, incomings, condition, **kwargs):
-        super(SwitchLayer, self).__init__(incomings, **kwargs)
-        self._condition = condition
-
-    def get_output_shape_for(self, input_shapes):
-        return input_shapes[1]
-
-    def get_output_for(self, inputs, **kwargs):
-        output = T.switch(self._condition, inputs[0], inputs[1])
-        return output
+    return transformed_probs

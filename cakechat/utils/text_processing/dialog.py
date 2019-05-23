@@ -1,4 +1,3 @@
-from six.moves import map
 from operator import itemgetter
 
 from cakechat.utils.tee_file import file_buffered_tee

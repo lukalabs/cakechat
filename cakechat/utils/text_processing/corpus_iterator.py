@@ -1,4 +1,3 @@
-import codecs
 import json
 from copy import copy
 
@@ -8,12 +7,11 @@ _logger = get_logger(__name__)
 
 
 class FileTextLinesIterator(object):
-    def __init__(self, filename, encoding='utf-8'):
+    def __init__(self, filename):
         self._filename = filename
-        self._encoding = encoding
 
     def __iter__(self):
-        for line in codecs.open(self._filename, 'r', self._encoding):
+        for line in open(self._filename, 'r', encoding='utf-8'):
             yield line.strip()
 
     def __copy__(self):
@@ -44,7 +42,7 @@ class JsonTextLinesIterator(object):
             try:
                 yield json.loads(line.strip())
             except ValueError:
-                _logger.warning('Skipped invalid json object: "%s"' % line.strip())
+                _logger.warning('Skipped invalid json object: "{}"'.format(line.strip()))
                 continue
 
     def __copy__(self):

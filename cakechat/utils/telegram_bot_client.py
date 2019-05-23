@@ -2,12 +2,11 @@ from abc import ABCMeta, abstractmethod
 
 import telepot
 import telepot.loop
-from six import iteritems
 
 from cakechat.utils.logger import WithLogger
 
 
-class AbstractTelegramChatSession(WithLogger):
+class AbstractTelegramChatSession(WithLogger, metaclass=ABCMeta):
     """
     Specific implementations of a chat session should overload default
     message handler `default_handle_message`, and possibly some of specific
@@ -38,7 +37,6 @@ class AbstractTelegramChatSession(WithLogger):
 
     TelegramBot(token).run(ReversedChatSession)
     """
-    __metaclass__ = ABCMeta
 
     def __init__(self, bot, chat_id):
         super(AbstractTelegramChatSession, self).__init__()
@@ -75,7 +73,7 @@ class AbstractTelegramChatSession(WithLogger):
 
     def _send_bot_help(self, _):
         help_lines = [self._bot_info(), '', 'List of available commands:']
-        for command, (_, description) in iteritems(self._command_to_handler):
+        for command, (_, description) in self._command_to_handler.items():
             help_lines.append('/{} - {}'.format(command, description))
 
         return self._send_text('\n'.join(help_lines))

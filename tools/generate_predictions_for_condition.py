@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 import argparse
 import os
 import sys
@@ -8,12 +6,13 @@ import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cakechat.utils.env import init_theano_env
 
-init_theano_env()
+from cakechat.utils.env import init_cuda_env
+
+init_cuda_env()
 
 from cakechat.config import QUESTIONS_CORPUS_NAME, INPUT_SEQUENCE_LENGTH, INPUT_CONTEXT_SIZE, \
-    PREDICTION_MODES, PREDICTION_MODE_FOR_TESTS, DEFAULT_CONDITION, RANDOM_SEED
+    PREDICTION_MODES, PREDICTION_MODE_FOR_TESTS, DEFAULT_CONDITION, RANDOM_SEED, INTX
 from cakechat.utils.text_processing import get_tokens_sequence, replace_out_of_voc_tokens
 from cakechat.utils.dataset_loader import get_tokenized_test_lines
 from cakechat.dialog_model.model_utils import transform_context_token_ids_to_sentences, \
@@ -39,7 +38,7 @@ def transform_lines_to_contexts_token_ids(tokenized_lines, nn_model):
 
 
 def predict_for_condition_id(nn_model, contexts, condition_id, prediction_mode=PREDICTION_MODE_FOR_TESTS):
-    condition_ids = np.array([condition_id] * contexts.shape[0], dtype=np.int32)
+    condition_ids = np.array([condition_id] * contexts.shape[0], dtype=INTX)
     responses = get_nn_responses(
         contexts, nn_model, mode=prediction_mode, output_candidates_num=1, condition_ids=condition_ids)
     return [candidates[0] for candidates in responses]
@@ -51,8 +50,8 @@ def print_predictions(nn_model, contexts_token_ids, condition, prediction_mode=P
         nn_model, contexts_token_ids, nn_model.condition_to_index[condition], prediction_mode=prediction_mode)
 
     for x, y in zip(x_sents, y_sents):
-        print('condition: %s; context: %s' % (condition.encode('utf8'), x.encode('utf8')))
-        print('response: %s' % y.encode('utf8'))
+        print('condition: {}; context: {}'.format(condition, x))
+        print('response: {}'.format(y))
         print()
 
 
@@ -79,7 +78,7 @@ if __name__ == '__main__':
     nn_model = get_trained_model()
 
     if args.text:
-        tokenized_lines = process_text(nn_model, args.text.decode('utf8'))
+        tokenized_lines = process_text(nn_model, args.text)
     else:
         tokenized_lines = load_corpus(nn_model, args.data)
 

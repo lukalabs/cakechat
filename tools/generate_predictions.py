@@ -4,38 +4,37 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cakechat.utils.env import init_theano_env
+from cakechat.utils.env import init_cuda_env
 
-init_theano_env()
+init_cuda_env()
 
-from cakechat.dialog_model.model import get_nn_model
+from cakechat.dialog_model.factory import get_reverse_model
+from cakechat.dialog_model.model import CakeChatModel
 from cakechat.dialog_model.model_utils import transform_contexts_to_token_ids, lines_to_context
 from cakechat.dialog_model.quality import log_predictions, calculate_and_log_val_metrics
 from cakechat.utils.files_utils import is_non_empty_file
 from cakechat.utils.logger import get_tools_logger
+from cakechat.utils.data_types import ModelParam
 from cakechat.utils.dataset_loader import get_tokenized_test_lines, load_context_free_val, \
-    load_context_sensitive_val
+    load_context_sensitive_val, get_validation_data_id, get_validation_sets_names
 from cakechat.utils.text_processing import get_index_to_token_path, load_index_to_item, get_index_to_condition_path
+from cakechat.utils.w2v.model import get_w2v_model_id
 from cakechat.config import BASE_CORPUS_NAME, QUESTIONS_CORPUS_NAME, INPUT_SEQUENCE_LENGTH, INPUT_CONTEXT_SIZE, \
-    PREDICTION_MODES, DATA_DIR, DEFAULT_TEMPERATURE, PREDICTION_MODE_FOR_TESTS
+    PREDICTION_MODES, PREDICTION_MODE_FOR_TESTS, RESULTS_PATH, DEFAULT_TEMPERATURE, TRAIN_CORPUS_NAME, \
+    USE_PRETRAINED_W2V_EMBEDDINGS_LAYER
 
 _logger = get_tools_logger(__file__)
 
 
-def _save_test_results(test_dataset, predictions_filename, nn_model, prediction_modes, **kwargs):
+def _save_test_results(test_dataset, predictions_filename, nn_model, prediction_mode, **kwargs):
+    context_sensitive_val = load_context_sensitive_val(nn_model.token_to_index, nn_model.condition_to_index)
+    context_free_val = load_context_free_val(nn_model.token_to_index)
+    calculate_and_log_val_metrics(nn_model, context_sensitive_val, context_free_val, prediction_mode,
+                                  calculate_ngram_distance=False)
+
     test_dataset_ids = transform_contexts_to_token_ids(
         list(lines_to_context(test_dataset)), nn_model.token_to_index, INPUT_SEQUENCE_LENGTH, INPUT_CONTEXT_SIZE)
-
-    calculate_and_log_val_metrics(nn_model,
-                                  load_context_sensitive_val(nn_model.token_to_index, nn_model.condition_to_index),
-                                  load_context_free_val(nn_model.token_to_index))
-
-    log_predictions(
-        predictions_filename,
-        test_dataset_ids,
-        nn_model,
-        prediction_modes,
-        **kwargs)
+    log_predictions(predictions_filename, test_dataset_ids, nn_model, prediction_modes=[prediction_mode], **kwargs)
 
 
 def predict(model_path,
@@ -45,7 +44,6 @@ def predict(model_path,
             reverse_model_weights=None,
             temperatures=None,
             prediction_mode=None):
-
     if not tokens_index_path:
         tokens_index_path = get_index_to_token_path(BASE_CORPUS_NAME)
     if not conditions_index_path:
@@ -72,11 +70,22 @@ def predict(model_path,
 
     index_to_token = load_index_to_item(tokens_index_path)
     index_to_condition = load_index_to_item(conditions_index_path)
+    w2v_model_id = get_w2v_model_id() if USE_PRETRAINED_W2V_EMBEDDINGS_LAYER else None
 
-    nn_model, _ = get_nn_model(index_to_token, index_to_condition, model_init_path=model_path)
+    nn_model = CakeChatModel(
+        index_to_token,
+        index_to_condition,
+        training_data_param=ModelParam(value=None, id=TRAIN_CORPUS_NAME),
+        validation_data_param=ModelParam(value=None, id=get_validation_data_id(get_validation_sets_names())),
+        w2v_model_param=ModelParam(value=None, id=w2v_model_id),
+        model_init_path=model_path,
+        reverse_model=get_reverse_model(prediction_mode))
+
+    nn_model.init_model()
+    nn_model.resolve_model()
 
     if not default_predictions_path:
-        default_predictions_path = os.path.join(DATA_DIR, 'results', 'predictions_' + nn_model.model_name)
+        default_predictions_path = os.path.join(RESULTS_PATH, 'results', 'predictions_' + nn_model.model_name)
 
     # Get path for each combination of parameters
     predictions_paths = []
@@ -91,30 +100,24 @@ def predict(model_path,
     else:
         predictions_paths = [default_predictions_path + '.tsv']
 
-    _logger.info('Model for prediction:\n{}'.format(nn_model.model_load_path))
-    _logger.info('Tokens index:\n{}'.format(tokens_index_path))
-    _logger.info('File with questions:\n{}'.format(QUESTIONS_CORPUS_NAME))
-    _logger.info('Files to dump responses:\n{}'.format('\n'.join(predictions_paths)))
-    _logger.info('Prediction parameters\n{}'.format('\n'.join([str(x) for x in prediction_params])))
+    _logger.info('Model for prediction: {}'.format(nn_model.model_path))
+    _logger.info('Tokens index: {}'.format(tokens_index_path))
+    _logger.info('File with questions: {}'.format(QUESTIONS_CORPUS_NAME))
+    _logger.info('Files to dump responses: {}'.format('\n'.join(predictions_paths)))
+    _logger.info('Prediction parameters {}'.format('\n'.join([str(x) for x in prediction_params])))
 
     processed_test_set = get_tokenized_test_lines(QUESTIONS_CORPUS_NAME, set(index_to_token.values()))
-    processed_test_set = list(processed_test_set)
 
     for cur_params, cur_path in zip(prediction_params, predictions_paths):
         _logger.info('Predicting with the following params: {}'.format(cur_params))
-        _save_test_results(processed_test_set, cur_path, nn_model, prediction_modes=[prediction_mode])
+        _save_test_results(processed_test_set, cur_path, nn_model, prediction_mode, **cur_params)
 
 
 def parse_args():
     argparser = argparse.ArgumentParser()
 
     argparser.add_argument(
-        '-p',
-        '--prediction-mode',
-        action='store',
-        help='Prediction mode',
-        choices=PREDICTION_MODES,
-        default=None)
+        '-p', '--prediction-mode', action='store', help='Prediction mode', choices=PREDICTION_MODES, default=None)
 
     argparser.add_argument(
         '-m',
@@ -154,13 +157,7 @@ def parse_args():
         help='Reverse model score weight for prediction with MMI-reranking objective. Used only in *-reranking modes',
         default=None)
 
-    argparser.add_argument(
-        '-t',
-        '--temperatures',
-        action='append',
-        help='temperature values',
-        default=None,
-        type=float)
+    argparser.add_argument('-t', '--temperatures', action='append', help='temperature values', default=None, type=float)
 
     args = argparser.parse_args()
 
