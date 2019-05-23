@@ -20,8 +20,13 @@ RUN apt-get update && apt-get install -y \
 # Install up-to-date pip
 RUN pip3 --no-cache-dir install -U pip
 
-CMD git clone https://github.com/lukalabs/cakechat.git /root/cakechat && \
-    cd /root/cakechat && \
-    pip3 install -r requirements.txt ; \
-    (mkdir -p /root/cakechat/results/tensorboard && CUDA_VISIBLE_DEVICES= tensorboard --logdir=/root/cakechat/results/tensorboard 2>/root/cakechat/results/tensorboard/err.log &) ; \
+# setup cakechat and install dependencies
+RUN git clone https://github.com/lukalabs/cakechat.git /root/cakechat
+RUN pip3 --no-cache-dir install -r /root/cakechat/requirements.txt -r /root/cakechat/requirements-local.txt
+RUN mkdir -p /root/cakechat/data/tensorboard
+
+WORKDIR /root/cakechat
+CMD git pull && \
+    pip3 install -r requirements.txt && \
+    (tensorboard --logdir=data/tensorboard 2>data/tensorboard/err.log &); \
     /bin/bash
