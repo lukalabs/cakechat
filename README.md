@@ -133,7 +133,7 @@ docker pull lukalabs/cakechat:latest
 
 3. Run a docker container in the CPU-only environment:
 ```(bash)
-    docker run --name <YOUR_CONTAINER_NAME> -it lukalabs/cakechat:latest
+docker run --name <YOUR_CONTAINER_NAME> -it lukalabs/cakechat:latest
 ```
 
 #### GPU-enabled setup
@@ -170,8 +170,7 @@ messing with your system packages.
 
 ## Getting the pre-trained model
 
-CPU and GPU Docker images are already shipped with a pre-trained Cakechat model.
-However, you can always re-download pre-trained model weights from Amazon S3 by running `python tools/fetch.py`.
+You can download our pre-trained model weights by running `python tools/fetch.py`.
 
 The params of the pre-trained model are the following:
 
@@ -253,13 +252,13 @@ different index files for different launches of the script.
 **Warning:** this script overwrites the original tokens index files `data/tokens_index/t_idx_processed_dialogs.json` and
 `data/conditions_index/c_idx_processed_dialogs.json`.
 You should only run this script in case your corpus is large enough to contain all the words that you want your model
-to understand. Otherwise, consider fine-tuning the pretrained model as described above. If you messed up with index
+to understand. Otherwise, consider fine-tuning the pre-trained model as described above. If you messed up with index
 files and want to get the default versions, delete your copies and run `python tools/fetch.py` anew.
 
 1. Consider running `python tools/train_w2v.py` to build w2v embedding from the training corpus.
 **Warning:** this script overwrites the original w2v weights that are stored in `data/w2v_models`.
 You should only run this script in case your corpus is large enough to contain all the words that you want your model
-to understand. Otherwise, consider fine-tuning the pretrained model as described above. If you messed up with w2v
+to understand. Otherwise, consider fine-tuning the pre-trained model as described above. If you messed up with w2v
 files and want to get the default version, delete your file copy and run `python tools/fetch.py` anew.
 
 1. Run `python tools/train.py`.
@@ -340,6 +339,8 @@ python bin/cakechat_server.py
 ```
 
 Specify `CUDA_VISIBLE_DEVICES=<GPU_ID>` environment variable to run the server on a certain GPU.
+
+Don't forget to run `python tools/fetch.py` prior to starting the server if you want to use our pre-trained model.
 
 To make sure everything works fine, test the model on the following conversation
 
