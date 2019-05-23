@@ -87,8 +87,7 @@ CPU version:
 ```(bash)
 docker pull lukalabs/cakechat:latest && \
 
-docker run --name cakechat-server -p 127.0.0.1:8080:8080 -it lukalabs/cakechat:latest \
-    bash -c "python bin/cakechat_server.py"
+docker run --name cakechat-server -p 127.0.0.1:8080:8080 -it lukalabs/cakechat:latest bash -c "python bin/cakechat_server.py"
 ```
 
 GPU version:
@@ -96,8 +95,7 @@ GPU version:
 ```(bash)
 docker pull lukalabs/cakechat-gpu:latest && \
 
-nvidia-docker run --name cakechat-gpu-server -p 127.0.0.1:8080:8080 -it lukalabs/cakechat-gpu:latest \
-    bash -c "CUDA_VISIBLE_DEVICES=0 python bin/cakechat_server.py"
+nvidia-docker run --name cakechat-gpu-server -p 127.0.0.1:8080:8080 -it lukalabs/cakechat-gpu:latest bash -c "CUDA_VISIBLE_DEVICES=0 python bin/cakechat_server.py"
 ```
 
 That's it! Now test your CakeChat server by running the following command on your host machine:
