@@ -11,6 +11,11 @@ The code is flexible and allows to condition model's responses by an arbitrary c
 For example, you can train your own persona-based neural conversational model[<sup>\[1\]</sup>](#f1)
 or create an emotional chatting machine[<sup>\[2\]</sup>](#f2).
 
+#### Main requirements
+
+* python 3.5.2
+* tensorflow 1.12.2
+* keras 2.2.4
 
 ## Table of contents
 
