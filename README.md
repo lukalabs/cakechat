@@ -1,9 +1,14 @@
-# CakeChat: Emotional Generative Dialog System
+**Note on the top: the project is unmaintained.**
 
-CakeChat is a chatbot that is able to express emotions via conversations.
-[Try it online!](https://cakechat.replika.ai/)
+Transformer-based dialog models work better and we recommend using them instead of RNN-based CakeChat. See, for example https://github.com/microsoft/DialoGPT
 
-![Demo](https://user-images.githubusercontent.com/2272790/57650691-3a8b9280-7580-11e9-9b60-ae3b28692c05.png)
+---
+
+## CakeChat: Emotional Generative Dialog System
+
+CakeChat is a backend for chatbots that are able to express emotions via conversations.
+
+![CakeChat representation](https://user-images.githubusercontent.com/2272790/57650691-3a8b9280-7580-11e9-9b60-ae3b28692c05.png)
 
 CakeChat is built on [Keras](https://keras.io/) and [Tensorflow](https://www.tensorflow.org).
 
