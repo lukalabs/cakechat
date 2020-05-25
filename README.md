@@ -524,7 +524,7 @@ following: **persona ID**, **emotion** or **topic** label, update the index file
 **CakeChat** is developed and maintained by the [Replika team](https://replika.ai):
 
 [Nicolas Ivanov](https://github.com/nicolas-ivanov), [Michael Khalman](https://github.com/mihaha),
-[Nikita Smetanin](https://github.com/nsmetanin), [Artem Rodichev](https://github.com/rodart) and
+[Nikita Smetanin](https://github.com/nikitos9000), [Artem Rodichev](https://github.com/rodart) and
 [Denis Fedorenko](https://github.com/sadreamer).
 
 Demo by [Oleg Akbarov](https://github.com/olegakbarov), [Alexander Kuznetsov](https://github.com/alexkuz) and
